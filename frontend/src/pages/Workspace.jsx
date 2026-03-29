@@ -108,7 +108,6 @@ function NewFileModal({ onClose, onCreate }) {
             autoFocus
             className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none"
           />
-          <p className="text-xs text-gray-600 mt-1">Language auto-detected from extension</p>
         </div>
 
         <div>
@@ -119,21 +118,11 @@ function NewFileModal({ onClose, onCreate }) {
           </select>
         </div>
 
-        {/* Import from computer */}
         <div className="border-t border-gray-800 pt-3">
           <p className="text-xs text-gray-600 mb-2">Or import from your computer:</p>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.cpp,.c,.cs,.php,.rb,.swift,.kt,.html,.css,.scss,.json,.md,.sql,.sh,.yaml,.yml,.xml,.txt"
-            onChange={handleImport}
-            className="hidden"
-          />
-          <button
-            onClick={() => importRef.current.click()}
-            disabled={creating}
-            className="w-full text-xs py-2 border border-dashed border-gray-600 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors disabled:opacity-50"
-          >
+          <input ref={importRef} type="file" onChange={handleImport} className="hidden" />
+          <button onClick={() => importRef.current.click()} disabled={creating}
+            className="w-full text-xs py-2 border border-dashed border-gray-600 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors disabled:opacity-50">
             {creating ? "Importing..." : "📁 Choose File from Computer"}
           </button>
         </div>
@@ -170,9 +159,6 @@ function FileItem({ file, isActive, currentUserId, onClick, onDelete }) {
           className="w-4 h-4 rounded-full bg-emerald-800 flex items-center justify-center text-xs font-bold text-emerald-200">
           {file.owner?.name?.[0]?.toUpperCase()}
         </div>
-        {!isMyFile && (
-          <span className="text-xs text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">read</span>
-        )}
         {isMyFile && (
           <button onClick={(e) => { e.stopPropagation(); onDelete(file._id); }}
             className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xs">
@@ -198,10 +184,19 @@ export default function Workspace() {
   const [saving,       setSaving]       = useState(false);
   const [localContent, setLocalContent] = useState("");
   const [activeTab,    setActiveTab]    = useState("editor");
+  const [workspace,    setWorkspace]    = useState(null); // ✅ workspace info
   const { downloadFile, downloadAllAsZip, copyToClipboard } = useExportFile();
-  const [copied, setCopied] = useState(false); // ← tab state here
+  const [copied, setCopied] = useState(false);
 
   const isMyFile = activeFile?.owner?._id === user?._id;
+
+  // ✅ Workspace info load karo (owner pata karne ke liye)
+  const loadWorkspace = useCallback(async () => {
+    try {
+      const res = await api.get(`/workspaces/${workspaceId}`);
+      setWorkspace(res.data);
+    } catch (err) { console.error(err); }
+  }, [workspaceId]);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -210,14 +205,17 @@ export default function Workspace() {
     } catch (err) { console.error(err); }
   }, [workspaceId]);
 
-  useEffect(() => { loadFiles(); }, [loadFiles]);
+  useEffect(() => {
+    loadWorkspace();
+    loadFiles();
+  }, [loadWorkspace, loadFiles]);
 
   useEffect(() => {
     setLocalContent(activeFile?.content || "");
   }, [activeFile?._id]);
 
-  const handleCreate = async ({ name, language }) => {
-    const res = await api.post(`/workspaces/${workspaceId}/files`, { name, language });
+  const handleCreate = async ({ name, language, content }) => {
+    const res = await api.post(`/workspaces/${workspaceId}/files`, { name, language, content });
     await loadFiles();
     setActiveFile(res.data);
   };
@@ -241,11 +239,9 @@ export default function Workspace() {
     loadFiles();
   };
 
-  // ── Import file from computer ───────────────────────────────────────
   const handleImportFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       const content = event.target.result;
@@ -258,13 +254,8 @@ export default function Workspace() {
         sql:"sql", sh:"shell", yaml:"yaml", yml:"yaml", xml:"xml",
       };
       const language = langMap[ext] || "plaintext";
-
       try {
-        const res = await api.post(`/workspaces/${workspaceId}/files`, {
-          name: file.name,
-          language,
-          content,
-        });
+        const res = await api.post(`/workspaces/${workspaceId}/files`, { name: file.name, language, content });
         await loadFiles();
         setActiveFile(res.data);
       } catch (err) {
@@ -272,14 +263,17 @@ export default function Workspace() {
       }
     };
     reader.readAsText(file);
-    // Reset input so same file can be imported again
     e.target.value = "";
   };
+
+  // ✅ Check karo current user workspace ka admin hai ya nahi
+  const isWorkspaceAdmin = workspace?.owner?._id === user?._id ||
+                           workspace?.owner === user?._id;
 
   return (
     <div className="flex flex-col h-[calc(100vh-48px)] bg-gray-950 text-gray-100 font-mono overflow-hidden">
 
-      {/* ── Tab Switcher ── */}
+      {/* Tab Switcher */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-800 bg-gray-900 flex-shrink-0">
         <button onClick={() => setActiveTab("editor")}
           className={`text-xs px-4 py-1.5 rounded-lg transition-colors ${
@@ -293,16 +287,29 @@ export default function Workspace() {
           }`}>
           Task Board
         </button>
+
+        {/* ✅ Admin badge top bar mein */}
+        <div className="ml-auto">
+          {isWorkspaceAdmin ? (
+            <span className="text-xs px-3 py-1 rounded-full border border-purple-700 bg-purple-900 text-purple-300">
+              👑 Admin
+            </span>
+          ) : (
+            <span className="text-xs px-3 py-1 rounded-full border border-gray-700 bg-gray-800 text-gray-400">
+              Member
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ── Kanban Tab ── */}
+      {/* Kanban Tab */}
       {activeTab === "kanban" ? (
         <div className="flex-1 overflow-hidden">
           <KanbanBoard workspaceId={workspaceId} members={members} />
         </div>
       ) : (
 
-        /* ── Editor Tab ── */
+        /* Editor Tab */
         <div className="flex flex-1 overflow-hidden">
 
           {/* File Tree Sidebar */}
@@ -310,30 +317,16 @@ export default function Workspace() {
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
               <span className="text-xs text-gray-500 uppercase tracking-widest">Files</span>
               <div className="flex items-center gap-1">
-                {/* Import file from computer */}
-                <label
-                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs cursor-pointer"
-                  title="Import File from Computer">
+                <label className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs cursor-pointer" title="Import File">
                   ↑
-                  <input
-                    type="file"
-                    accept="*/*"
-                    onChange={handleImportFile}
-                    className="hidden"
-                  />
+                  <input type="file" accept="*/*" onChange={handleImportFile} className="hidden" />
                 </label>
-                {/* Download all as ZIP */}
-                <button
-                  onClick={() => downloadAllAsZip(files, "workspace")}
-                  disabled={files.length === 0}
-                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs disabled:opacity-30"
-                  title="Download All as ZIP">
+                <button onClick={() => downloadAllAsZip(files, "workspace")} disabled={files.length === 0}
+                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs disabled:opacity-30" title="Download All as ZIP">
                   ↓
                 </button>
-                {/* New file */}
                 <button onClick={() => setShowNewFile(true)}
-                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-base"
-                  title="New File">
+                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-base" title="New File">
                   +
                 </button>
               </div>
@@ -343,8 +336,7 @@ export default function Workspace() {
               {files.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-xs text-gray-600">No files yet</p>
-                  <button onClick={() => setShowNewFile(true)}
-                    className="text-xs text-emerald-500 hover:underline mt-1">
+                  <button onClick={() => setShowNewFile(true)} className="text-xs text-emerald-500 hover:underline mt-1">
                     Create one →
                   </button>
                 </div>
@@ -362,19 +354,36 @@ export default function Workspace() {
               )}
             </div>
 
-            {/* Members */}
+            {/* ✅ Members list with Admin badge */}
             <div className="border-t border-gray-800 p-3">
               <p className="text-xs text-gray-600 uppercase tracking-widest mb-2">
                 Online — {members.length}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {members.map((m, i) => (
-                  <div key={i} title={`${m.name} — ${m.status || "online"}`}
-                    style={{ background: m.color }}
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-gray-900">
-                    {m.name?.[0]?.toUpperCase()}
-                  </div>
-                ))}
+              <div className="flex flex-col gap-1.5">
+                {members.map((m, i) => {
+                  const memberIsAdmin = workspace?.owner?._id === m.userId ||
+                                       workspace?.owner === m.userId;
+                  return (
+                    <div key={i}
+                      title={`${m.name} — ${m.status || "online"}`}
+                      className="flex items-center gap-2">
+                      <div
+                        style={{ background: m.color }}
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-gray-900 flex-shrink-0">
+                        {m.name?.[0]?.toUpperCase()}
+                      </div>
+                      <span className="text-xs text-gray-300 flex-1 truncate">{m.name}</span>
+                      {/* ✅ Admin / Member badge */}
+                      {memberIsAdmin ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-900 border border-purple-700 text-purple-300 flex-shrink-0">
+                          👑
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600 flex-shrink-0">user</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -402,14 +411,11 @@ export default function Workspace() {
                         const ok = await copyToClipboard(localContent);
                         if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
                       }}
-                      className="text-xs px-2 py-1 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white rounded-lg transition-colors"
-                    >
+                      className="text-xs px-2 py-1 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white rounded-lg transition-colors">
                       {copied ? "Copied!" : "Copy"}
                     </button>
-                    <button
-                      onClick={() => downloadFile(activeFile.name, localContent)}
-                      className="text-xs px-2 py-1 border border-gray-700 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors"
-                    >
+                    <button onClick={() => downloadFile(activeFile.name, localContent)}
+                      className="text-xs px-2 py-1 border border-gray-700 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors">
                       ↓ Download
                     </button>
                     {isConnected
@@ -433,9 +439,7 @@ export default function Workspace() {
               </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
-                <div className="w-12 h-12 bg-gray-900 border border-gray-800 rounded-2xl flex items-center justify-center text-2xl">
-                  📄
-                </div>
+                <div className="w-12 h-12 bg-gray-900 border border-gray-800 rounded-2xl flex items-center justify-center text-2xl">📄</div>
                 <p className="text-sm text-gray-500">Select a file to start editing</p>
                 <button onClick={() => setShowNewFile(true)}
                   className="text-xs px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors">
@@ -452,16 +456,11 @@ export default function Workspace() {
         </div>
       )}
 
-      {/* New File Modal */}
       {showNewFile && (
         <NewFileModal onClose={() => setShowNewFile(false)} onCreate={handleCreate} />
       )}
 
-      {/* AI Assistant */}
-      <AIAssistant
-        currentCode={localContent}
-        currentLanguage={activeFile?.language || "javascript"}
-      />
+      <AIAssistant currentCode={localContent} currentLanguage={activeFile?.language || "javascript"} />
     </div>
   );
 }

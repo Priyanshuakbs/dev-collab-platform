@@ -6,31 +6,27 @@ import api from "../services/api";
 
 // ─── Send Invite Modal ────────────────────────────────────────────────
 function SendInviteModal({ onClose, onSent }) {
-  const { user }                        = useContext(AuthContext);
-  const [search,   setSearch]           = useState("");
-  const [users,    setUsers]            = useState([]);
-  const [projects, setProjects]         = useState([]);
-  const [selected, setSelected]         = useState({ user: null, project: null });
-  const [sending,  setSending]          = useState(false);
-  const [error,    setError]            = useState("");
+  const { user }                    = useContext(AuthContext);
+  const [search,   setSearch]       = useState("");
+  const [users,    setUsers]        = useState([]);
+  const [projects, setProjects]     = useState([]);
+  const [selected, setSelected]     = useState({ user: null, project: null });
+  const [sending,  setSending]      = useState(false);
+  const [error,    setError]        = useState("");
 
-  // Search users (debounced)
   useEffect(() => {
     if (!search.trim()) { setUsers([]); return; }
     const t = setTimeout(async () => {
       try {
         const res = await api.get(`/users/search?q=${search}`);
-        // exclude yourself from results
         setUsers(res.data.filter((u) => u._id !== user?._id));
       } catch { setUsers([]); }
     }, 400);
     return () => clearTimeout(t);
   }, [search, user]);
 
-  // ✅ FIX: fetch owned projects properly
   useEffect(() => {
     api.get("/projects/mine").then((res) => {
-      // filter only projects where current user is the owner
       const owned = res.data.filter((p) => {
         const ownerId = p.owner?._id || p.owner;
         return ownerId?.toString() === user?._id?.toString();
@@ -45,7 +41,6 @@ function SendInviteModal({ onClose, onSent }) {
     try {
       setSending(true);
       setError("");
-      // ✅ FIX: send `receiver` (not `receiverId`) to match backend
       await api.post("/invitations", {
         receiver:  selected.user._id,
         projectId: selected.project._id,
@@ -62,21 +57,16 @@ function SendInviteModal({ onClose, onSent }) {
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center px-4">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
-
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-white">Send Team Invite</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">✕</button>
         </div>
 
-        {/* Search user */}
         <div>
           <label className="text-xs text-gray-500 mb-1.5 block">User dhundo</label>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or email..."
-            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none"
-          />
+            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none" />
           {users.length > 0 && (
             <div className="mt-1 bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
               {users.map((u) => (
@@ -94,8 +84,6 @@ function SendInviteModal({ onClose, onSent }) {
               ))}
             </div>
           )}
-
-          {/* Selected user chip */}
           {selected.user && (
             <div className="mt-2 flex items-center gap-2 bg-emerald-900 border border-emerald-700 rounded-lg px-3 py-2">
               <div className="w-6 h-6 rounded-full bg-emerald-700 flex items-center justify-center text-xs font-bold text-white">
@@ -108,28 +96,24 @@ function SendInviteModal({ onClose, onSent }) {
           )}
         </div>
 
-        {/* Select project */}
         <div>
-          <label className="text-xs text-gray-500 mb-1.5 block">Project select karo</label>
+          <label className="text-xs text-gray-500 mb-1.5 block">Project select karo <span className="text-purple-400">(sirf tumhare owned projects)</span></label>
           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
             {projects.length === 0 ? (
               <div className="text-center py-4 bg-gray-800 rounded-lg">
                 <p className="text-xs text-gray-500">No owned projects found</p>
-                <p className="text-xs text-gray-600 mt-1">Sirf apne projects mein invite kar sakte ho</p>
+                <p className="text-xs text-gray-600 mt-1">Sirf 👑 Admin wale projects mein invite kar sakte ho</p>
               </div>
             ) : (
               projects.map((p) => (
-                <button key={p._id}
-                  onClick={() => setSelected((s) => ({ ...s, project: p }))}
+                <button key={p._id} onClick={() => setSelected((s) => ({ ...s, project: p }))}
                   className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
                     selected.project?._id === p._id
                       ? "border-emerald-600 bg-emerald-900 text-emerald-200"
                       : "border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600"
                   }`}>
                   <span className="font-medium">{p.title}</span>
-                  {p.description && (
-                    <span className="text-xs text-gray-500 ml-2">{p.description.slice(0, 40)}</span>
-                  )}
+                  <span className="text-xs text-purple-400 ml-2">👑 Admin</span>
                 </button>
               ))
             )}
@@ -168,8 +152,6 @@ function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
-
-      {/* Project info */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-500 uppercase tracking-widest mb-0.5">Project</p>
@@ -194,16 +176,19 @@ function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
         </span>
       </div>
 
-      {/* Sender / Receiver */}
       <div className="flex items-center gap-2 border-t border-gray-800 pt-2">
         {type === "received" ? (
           <>
             <div className="w-6 h-6 rounded-full bg-purple-800 flex items-center justify-center text-xs font-bold text-purple-200">
               {invite.sender?.name?.[0]?.toUpperCase()}
             </div>
+            {/* ✅ Sender = Admin badge */}
             <span className="text-xs text-gray-400">From: </span>
             <span className="text-xs text-white">{invite.sender?.name}</span>
-            <span className="text-xs text-gray-600 ml-1">{invite.sender?.email}</span>
+            <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-900 border border-purple-700 text-purple-300 ml-1">
+              👑 Admin
+            </span>
+            <span className="text-xs text-gray-600 ml-auto">{new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
           </>
         ) : (
           <>
@@ -212,15 +197,15 @@ function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
             </div>
             <span className="text-xs text-gray-400">To: </span>
             <span className="text-xs text-white">{invite.receiver?.name}</span>
-            <span className="text-xs text-gray-600 ml-1">{invite.receiver?.email}</span>
+            {/* ✅ Receiver = Member badge */}
+            <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-400 ml-1">
+              Member
+            </span>
+            <span className="text-xs text-gray-600 ml-auto">{new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
           </>
         )}
-        <span className="text-xs text-gray-600 ml-auto flex-shrink-0">
-          {new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-        </span>
       </div>
 
-      {/* Actions */}
       {type === "received" && invite.status === "pending" && (
         <div className="flex gap-2">
           <button onClick={() => handle(onAccept, "accept")} disabled={!!loading}
@@ -245,11 +230,11 @@ function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────
 export default function InvitationsPage() {
-  const [received,   setReceived]   = useState([]);
-  const [sent,       setSent]       = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [tab,        setTab]        = useState("received");
-  const [showModal,  setShowModal]  = useState(false);
+  const [received,  setReceived]  = useState([]);
+  const [sent,      setSent]      = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [tab,       setTab]       = useState("received");
+  const [showModal, setShowModal] = useState(false);
 
   const fetchAll = async () => {
     try {
@@ -261,7 +246,7 @@ export default function InvitationsPage() {
       setReceived(recRes.data);
       setSent(sentRes.data);
     } catch (err) {
-      console.error("fetchAll invitations error:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -278,8 +263,6 @@ export default function InvitationsPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-mono">
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-white flex items-center gap-2">
@@ -298,7 +281,6 @@ export default function InvitationsPage() {
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-0.5 w-fit">
           {[
             { key: "received", label: `received (${received.length})` },
@@ -313,7 +295,6 @@ export default function InvitationsPage() {
           ))}
         </div>
 
-        {/* List */}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
@@ -326,8 +307,7 @@ export default function InvitationsPage() {
                   {tab === "received" ? "No invitations received yet" : "No invitations sent yet"}
                 </p>
                 {tab === "sent" && (
-                  <button onClick={() => setShowModal(true)}
-                    className="mt-2 text-xs text-emerald-400 hover:underline">
+                  <button onClick={() => setShowModal(true)} className="mt-2 text-xs text-emerald-400 hover:underline">
                     Send your first invite →
                   </button>
                 )}

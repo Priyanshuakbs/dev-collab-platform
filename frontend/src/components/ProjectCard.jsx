@@ -1,5 +1,3 @@
-// frontend/src/components/ProjectCard.jsx
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
@@ -17,7 +15,7 @@ const STATUS_STYLE = {
 };
 
 export default function ProjectCard({ project, currentUser, onOpen, compact = false }) {
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
   const isOwner = (() => {
@@ -28,26 +26,18 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
   const deadlinePassed = project.deadline && new Date(project.deadline) < new Date();
   const memberCount    = project.collaborators?.length || 1;
 
-  // ✅ FIX: workspace navigate karo — agar nahi hai toh create karo
   const handleOpenWorkspace = async (e) => {
     e.stopPropagation();
     try {
       setLoading(true);
-
-      // Agar project ke saath workspace already linked hai
       if (project.workspace) {
         const wsId = project.workspace?._id || project.workspace;
         navigate(`/workspace/${wsId}`);
         return;
       }
-
-      // Workspace nahi hai — naya banao aur project se link karo
       const wsRes = await api.post("/workspaces", { name: project.title });
       const wsId  = wsRes.data._id;
-
-      // Project mein workspace ID save karo
       await api.put(`/projects/${project._id}`, { workspace: wsId });
-
       navigate(`/workspace/${wsId}`);
     } catch (err) {
       console.error("Workspace error:", err);
@@ -62,9 +52,20 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
 
       {/* Top row */}
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors leading-snug flex-1 truncate">
-          {project.title}
-        </h3>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors leading-snug truncate">
+            {project.title}
+          </h3>
+          {isOwner ? (
+            <span className="text-xs px-2 py-0.5 rounded-full border border-purple-700 bg-purple-900 text-purple-300 flex-shrink-0">
+              👑 Admin
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full border border-gray-700 bg-gray-800 text-gray-400 flex-shrink-0">
+              Member
+            </span>
+          )}
+        </div>
         <div className="flex gap-1.5 flex-shrink-0">
           {project.priority && (
             <span className={`text-xs px-2 py-0.5 rounded-full border ${PRIORITY_STYLE[project.priority] || PRIORITY_STYLE.medium}`}>
@@ -107,12 +108,23 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
             {[project.owner, ...(project.collaborators || [])]
               .filter(Boolean)
               .slice(0, 4)
-              .map((m, i) => (
-                <div key={i} title={m?.name}
-                  className="w-5 h-5 rounded-full bg-emerald-800 border border-gray-900 flex items-center justify-center text-xs font-bold text-emerald-200 flex-shrink-0">
-                  {(m?.name || "?")?.[0]?.toUpperCase()}
-                </div>
-              ))}
+              .map((m, i) => {
+                const memberId      = m?._id || m;
+                const memberIsOwner = (project.owner?._id || project.owner)?.toString() === memberId?.toString();
+                return (
+                  <div
+                    key={i}
+                    title={`${m?.name || "?"}${memberIsOwner ? " 👑 Admin" : " Member"}`}
+                    className={`w-5 h-5 rounded-full border border-gray-900 flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      memberIsOwner
+                        ? "bg-purple-800 text-purple-200"
+                        : "bg-emerald-800 text-emerald-200"
+                    }`}
+                  >
+                    {(m?.name || "?")?.[0]?.toUpperCase()}
+                  </div>
+                );
+              })}
           </div>
           <span className="text-xs text-gray-600">
             {memberCount} member{memberCount !== 1 ? "s" : ""}
@@ -138,16 +150,14 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
           {loading ? "Opening..." : "Open Workspace"}
         </button>
 
-        {isOwner && (
-          <span className="text-xs px-2 py-1 border border-gray-700 text-gray-500 rounded-lg">
-            Owner
-          </span>
-        )}
-
         {project.githubRepo && (
-          <a href={project.githubRepo} target="_blank" rel="noreferrer"
+          <a
+            href={project.githubRepo}
+            target="_blank"
+            rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs px-2 py-1 border border-gray-700 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors">
+            className="text-xs px-2 py-1 border border-gray-700 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors"
+          >
             GitHub
           </a>
         )}
