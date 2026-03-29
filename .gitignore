@@ -1,0 +1,11 @@
+notepad .gitignore
+```
+
+Notepad mein yeh paste karo:
+```
+node_modules/
+.env
+*.env
+.env.local
+dist/
+build/
