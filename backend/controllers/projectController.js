@@ -2,7 +2,17 @@
 
 const Project = require("../models/Project");
 
+// ─── Helper: check if user is member ────────────────────────────────
+const isMember = (project, userId) => {
+  const id = userId.toString();
+  return (
+    project.owner.toString() === id ||
+    (project.collaborators || []).some((c) => c.toString() === id)
+  );
+};
+
 // ─── Create Project ──────────────────────────────────────────────────
+// Owner is automatically added as the first collaborator.
 exports.createProject = async (req, res) => {
   try {
     const { title, description, techStack, githubRepo, priority, deadline } = req.body;
@@ -15,7 +25,7 @@ exports.createProject = async (req, res) => {
       priority:      priority || "medium",
       deadline:      deadline || null,
       owner:         req.user._id,
-      collaborators: [req.user._id],
+      collaborators: [req.user._id], // owner auto-joined
     });
 
     const populated = await project.populate("owner", "name email avatar");
@@ -25,12 +35,22 @@ exports.createProject = async (req, res) => {
   }
 };
 
-// ─── Get All Projects ────────────────────────────────────────────────
-exports.getProjects = async (req, res) => {
+// ─── Get My Projects ──────────────────────────────────────────────────
+// SECURITY: Only returns projects the authenticated user owns OR
+// is a collaborator on. Never returns other users' private projects.
+exports.getMyProjects = async (req, res) => {
   try {
-    const projects = await Project.find()
+    const { status, priority } = req.query;
+    const filter = {
+      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+    };
+    if (status)   filter.status   = status;
+    if (priority) filter.priority = priority;
+
+    const projects = await Project.find(filter)
       .populate("owner",         "name email avatar")
       .populate("collaborators", "name email avatar")
+      .populate("workspace",     "name")
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -39,15 +59,32 @@ exports.getProjects = async (req, res) => {
   }
 };
 
-// ─── Get My Projects ─────────────────────────────────────────────────
-exports.getMyProjects = async (req, res) => {
+// ─── Get Projects I Own ───────────────────────────────────────────────
+exports.getOwnedProjects = async (req, res) => {
+  try {
+    const projects = await Project.find({ owner: req.user._id })
+      .populate("owner",         "name email avatar")
+      .populate("collaborators", "name email avatar")
+      .populate("workspace",     "name")
+      .sort({ createdAt: -1 });
+
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Get Projects Shared With Me ──────────────────────────────────────
+// Projects where user is a collaborator but NOT the owner.
+exports.getSharedProjects = async (req, res) => {
   try {
     const projects = await Project.find({
-      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+      collaborators: req.user._id,
+      owner:         { $ne: req.user._id },
     })
       .populate("owner",         "name email avatar")
       .populate("collaborators", "name email avatar")
-      .populate("workspace",     "name")          // ✅ workspace bhi populate karo
+      .populate("workspace",     "name")
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -57,14 +94,22 @@ exports.getMyProjects = async (req, res) => {
 };
 
 // ─── Get Single Project ──────────────────────────────────────────────
+// SECURITY: Enforces membership check — non-members receive 403.
 exports.getProjectById = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
       .populate("owner",         "name email avatar")
       .populate("collaborators", "name email avatar")
-      .populate("workspace",     "name");         // ✅ workspace bhi
+      .populate("workspace",     "name");
 
     if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // IDOR guard — must be owner or collaborator
+    if (!isMember(project, req.user._id)) {
+      return res.status(403).json({
+        message: "Access denied. You are not a member of this project.",
+      });
+    }
 
     res.json(project);
   } catch (error) {
@@ -78,18 +123,15 @@ exports.updateProject = async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    // ✅ FIX: owner aur collaborators dono update kar sakte hain
-    // (workspace link karne ke liye collaborator bhi update karega)
-    const isOwner = project.owner.toString() === req.user._id.toString();
-    const isMember = (project.collaborators || [])
-      .map((c) => c.toString())
-      .includes(req.user._id.toString());
+    const isOwner  = project.owner.toString() === req.user._id.toString();
+    const isMemberCheck = (project.collaborators || [])
+      .map((c) => c.toString()).includes(req.user._id.toString());
 
-    if (!isOwner && !isMember)
+    if (!isOwner && !isMemberCheck)
       return res.status(403).json({ message: "Access denied" });
 
-    // Sirf owner hi title/description/techStack update kar sakta hai
-    // Lekin workspace field koi bhi member update kar sakta hai
+    // Only owner can change title/description/techStack etc.
+    // Members can link a workspace
     const allowedFields = ["workspace"];
     if (isOwner) {
       allowedFields.push(
@@ -104,9 +146,7 @@ exports.updateProject = async (req, res) => {
     });
 
     const updated = await Project.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      { new: true }
+      req.params.id, updates, { new: true }
     )
       .populate("owner",         "name email avatar")
       .populate("collaborators", "name email avatar")
@@ -125,31 +165,10 @@ exports.deleteProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: "Project not found" });
 
     if (project.owner.toString() !== req.user._id.toString())
-      return res.status(403).json({ message: "Only owner can delete" });
+      return res.status(403).json({ message: "Only the project owner can delete it" });
 
     await project.deleteOne();
     res.json({ message: "Project deleted" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ─── Join Project ────────────────────────────────────────────────────
-exports.joinProject = async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-
-    const alreadyIn = (project.collaborators || [])
-      .map((c) => c.toString())
-      .includes(req.user._id.toString());
-
-    if (!alreadyIn) {
-      project.collaborators.push(req.user._id);
-      await project.save();
-    }
-
-    res.json(project);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -161,25 +180,28 @@ exports.leaveProject = async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
+    if (project.owner.toString() === req.user._id.toString())
+      return res.status(400).json({ message: "Owner cannot leave their own project" });
+
     project.collaborators = project.collaborators.filter(
       (c) => c.toString() !== req.user._id.toString()
     );
     await project.save();
 
-    res.json({ message: "Left project" });
+    res.json({ message: "You have left the project" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// ─── Remove Member ───────────────────────────────────────────────────
+// ─── Remove Member (owner only) ───────────────────────────────────────
 exports.removeMember = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
     if (project.owner.toString() !== req.user._id.toString())
-      return res.status(403).json({ message: "Only owner can remove members" });
+      return res.status(403).json({ message: "Only the project owner can remove members" });
 
     project.collaborators = project.collaborators.filter(
       (c) => c.toString() !== req.params.memberId

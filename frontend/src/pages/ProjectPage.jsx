@@ -1,241 +1,302 @@
 // frontend/src/pages/ProjectPage.jsx
-
 import { useState, useEffect, useContext } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { AuthContext } from "../context/AuthContext";
 import api from "../services/api";
 
-// ── Helpers ──────────────────────────────────────────────────────────
-const PRIORITY_STYLE = {
-  high:   "bg-red-900 text-red-300 border-red-700",
-  medium: "bg-yellow-900 text-yellow-300 border-yellow-700",
-  low:    "bg-gray-800 text-gray-400 border-gray-600",
+// ── Priority / Status styles ───────────────────────────────────────────
+const PRIORITY_CLASS = {
+  high:   "badge badge-high",
+  medium: "badge badge-medium",
+  low:    "badge badge-low",
 };
-
-const STATUS_STYLE = {
-  active:    "bg-emerald-900 text-emerald-300 border-emerald-700",
-  completed: "bg-blue-900 text-blue-300 border-blue-700",
-  archived:  "bg-gray-800 text-gray-500 border-gray-600",
+const STATUS_CLASS = {
+  active:    "badge badge-active",
+  completed: "badge badge-member",
+  archived:  "badge",
 };
 
 const EMPTY_FORM = {
-  title: "", description: "", techStack: "", githubRepo: "",
-  priority: "medium", deadline: "", status: "active",
+  title: "", description: "", techStack: "",
+  githubRepo: "", priority: "medium", deadline: "", status: "active",
 };
 
-// ── ProjectCard ───────────────────────────────────────────────────────
-function ProjectCard({ project, currentUser, onJoin, onLeave, onDelete, onEdit, onOpen }) {
-  const isOwner = project.owner?._id === currentUser?._id;
-  const isMember = project.collaborators?.some((c) => c._id === currentUser?._id);
-  const deadlinePassed = project.deadline && new Date(project.deadline) < new Date();
+// ── Avatar Stack ───────────────────────────────────────────────────────
+function AvatarStack({ members = [], max = 4 }) {
+  const shown = members.slice(0, max);
+  const rest  = members.length - max;
+  return (
+    <div className="flex items-center -space-x-2">
+      {shown.map((m, i) => (
+        <div key={i}
+          title={m?.name}
+          className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold flex-shrink-0"
+          style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)", borderColor: "var(--bg-card)", color: "white", zIndex: shown.length - i }}>
+          {m?.name?.[0]?.toUpperCase() || "?"}
+        </div>
+      ))}
+      {rest > 0 && (
+        <div className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold"
+          style={{ background: "var(--bg-overlay)", borderColor: "var(--bg-card)", color: "var(--text-muted)" }}>
+          +{rest}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Project Card ───────────────────────────────────────────────────────
+function ProjectCard({ project, currentUser, onDelete, onEdit, onOpen }) {
+  const isOwner  = project.owner?._id === currentUser?._id;
+  const overdue  = project.deadline && new Date(project.deadline) < new Date();
+  const members  = [project.owner, ...(project.collaborators || [])].filter(Boolean);
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-3 hover:border-gray-700 transition-colors group">
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="card card-interactive p-5 flex flex-col gap-4 relative group"
+      onClick={() => onOpen?.(project.workspace?._id || project._id)}
+    >
+      {/* Owner crown */}
+      {isOwner && (
+        <div className="absolute top-3 right-3 text-sm" title="You own this project">👑</div>
+      )}
 
-      {/* Top row */}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors leading-snug flex-1">
-          {project.title}
-        </h3>
-        <div className="flex gap-1.5 flex-shrink-0">
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${PRIORITY_STYLE[project.priority]}`}>
-            {project.priority}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_STYLE[project.status]}`}>
-            {project.status}
-          </span>
+      {/* Header */}
+      <div>
+        <div className="flex items-start justify-between gap-8 mb-1.5">
+          <h3 className="text-sm font-bold text-white leading-snug line-clamp-1 flex-1 group-hover:text-purple-300 transition-colors">
+            {project.title}
+          </h3>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={PRIORITY_CLASS[project.priority] || "badge"}>{project.priority}</span>
+          <span className={STATUS_CLASS[project.status]   || "badge"}>{project.status}</span>
         </div>
       </div>
 
       {/* Description */}
       {project.description && (
-        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{project.description}</p>
+        <p className="text-xs leading-relaxed line-clamp-2" style={{ color: "var(--text-muted)" }}>
+          {project.description}
+        </p>
       )}
 
       {/* Tech stack */}
       {project.techStack?.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {project.techStack.map((t, i) => (
-            <span key={i} className="text-xs px-2 py-0.5 bg-gray-800 border border-gray-700 rounded-full text-emerald-300">
+          {project.techStack.slice(0, 5).map((t, i) => (
+            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+              style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)", color: "#c4b5fd" }}>
               {t}
             </span>
           ))}
+          {project.techStack.length > 5 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ color: "var(--text-muted)" }}>
+              +{project.techStack.length - 5}
+            </span>
+          )}
         </div>
       )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: "var(--border-muted)" }}>
+        <AvatarStack members={members} />
+
+        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {isOwner && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit?.(project); }}
+                className="text-xs px-2.5 py-1 rounded-lg transition-colors font-medium"
+                style={{ background: "rgba(255,255,255,0.05)", color: "var(--text-secondary)" }}
+              >
+                Edit
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete?.(project._id); }}
+                className="text-xs px-2.5 py-1 rounded-lg transition-colors font-medium"
+                style={{ background: "rgba(239,68,68,0.08)", color: "#f87171" }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+          {project.workspace?._id && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpen?.(project.workspace._id); }}
+              className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
+              style={{ background: "rgba(124,58,237,0.15)", color: "#c4b5fd" }}
+            >
+              Open →
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Deadline */}
       {project.deadline && (
-        <p className={`text-xs ${deadlinePassed ? "text-red-400" : "text-gray-500"}`}>
-          deadline: {new Date(project.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-          {deadlinePassed && " (overdue)"}
+        <p className="text-[10px] font-medium" style={{ color: overdue ? "#f87171" : "var(--text-muted)" }}>
+          {overdue ? "⚠ Overdue · " : "Due "}{new Date(project.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
         </p>
       )}
-
-      {/* Members */}
-      <div className="flex items-center gap-2">
-        <div className="flex -space-x-1.5">
-          {[project.owner, ...(project.collaborators || [])].slice(0, 5).map((m, i) => (
-            <div key={i} title={m?.name}
-              className="w-6 h-6 rounded-full bg-emerald-800 border border-gray-900 flex items-center justify-center text-xs font-bold text-emerald-200 flex-shrink-0">
-              {m?.name?.[0]?.toUpperCase()}
-            </div>
-          ))}
-        </div>
-        <span className="text-xs text-gray-600">
-          {1 + (project.collaborators?.length || 0)} member{(project.collaborators?.length || 0) !== 0 ? "s" : ""}
-        </span>
-        {project.githubRepo && (
-          <a href={project.githubRepo} target="_blank" rel="noreferrer"
-            className="ml-auto text-xs text-gray-500 hover:text-emerald-400 transition-colors">
-            github →
-          </a>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-1 border-t border-gray-800">
-        <button onClick={() => onOpen(project._id)}
-          className="flex-1 text-xs py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded-lg transition-colors">
-          Open Workspace
-        </button>
-        {isOwner ? (
-          <>
-            <button onClick={() => onEdit(project)}
-              className="text-xs px-3 py-1.5 border border-gray-700 hover:bg-gray-800 text-gray-400 rounded-lg transition-colors">
-              edit
-            </button>
-            <button onClick={() => onDelete(project._id)}
-              className="text-xs px-3 py-1.5 border border-red-900 hover:bg-red-900 text-red-400 rounded-lg transition-colors">
-              del
-            </button>
-          </>
-        ) : isMember ? (
-          <button onClick={() => onLeave(project._id)}
-            className="text-xs px-3 py-1.5 border border-gray-700 hover:bg-gray-800 text-gray-400 rounded-lg transition-colors">
-            leave
-          </button>
-        ) : (
-          <button onClick={() => onJoin(project._id)}
-            className="text-xs px-3 py-1.5 border border-emerald-700 hover:bg-emerald-900 text-emerald-400 rounded-lg transition-colors">
-            join
-          </button>
-        )}
-      </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ── Create / Edit Modal ───────────────────────────────────────────────
-function ProjectModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState(initial || EMPTY_FORM);
-  const [saving, setSaving] = useState("");
+// ── Project Form Modal ─────────────────────────────────────────────────
+function ProjectModal({ open, onClose, onSave, initial }) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  useEffect(() => {
+    if (open) {
+      setForm(initial
+        ? {
+            title:       initial.title || "",
+            description: initial.description || "",
+            techStack:   (initial.techStack || []).join(", "),
+            githubRepo:  initial.githubRepo || "",
+            priority:    initial.priority || "medium",
+            deadline:    initial.deadline ? initial.deadline.slice(0, 10) : "",
+            status:      initial.status || "active",
+          }
+        : EMPTY_FORM
+      );
+    }
+  }, [open, initial]);
 
-  const handleSubmit = async () => {
+  const handleSave = async () => {
     if (!form.title.trim()) return;
     setSaving(true);
-    await onSave({
-      ...form,
-      techStack: typeof form.techStack === "string"
-        ? form.techStack.split(",").map((s) => s.trim()).filter(Boolean)
-        : form.techStack,
-    });
-    setSaving(false);
+    try {
+      await onSave({
+        ...form,
+        techStack: form.techStack ? form.techStack.split(",").map(s => s.trim()).filter(Boolean) : [],
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
+  if (!open) return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-white">{initial ? "Edit Project" : "New Project"}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">✕</button>
-        </div>
-
-        <input value={form.title} onChange={(e) => set("title", e.target.value)}
-          placeholder="Project title *"
-          className="w-full bg-gray-800 text-sm text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none" />
-
-        <textarea value={form.description} onChange={(e) => set("description", e.target.value)}
-          placeholder="Description"  rows={3}
-          className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none resize-none" />
-
-        <input value={form.techStack} onChange={(e) => set("techStack", e.target.value)}
-          placeholder="Tech stack — React, Node.js, MongoDB"
-          className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none" />
-
-        <input value={form.githubRepo} onChange={(e) => set("githubRepo", e.target.value)}
-          placeholder="GitHub repo URL"
-          className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none" />
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Priority</label>
-            <select value={form.priority} onChange={(e) => set("priority", e.target.value)}
-              className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 outline-none">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 16 }}
+          className="w-full max-w-lg rounded-2xl p-6"
+          style={{ background: "var(--bg-raised)", border: "1px solid var(--border-strong)" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-bold text-white">
+              {initial ? "Edit Project" : "Create Project"}
+            </h2>
+            <button onClick={onClose} className="text-xl" style={{ color: "var(--text-muted)" }}>✕</button>
           </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Status</label>
-            <select value={form.status} onChange={(e) => set("status", e.target.value)}
-              className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 outline-none">
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="archived">Archived</option>
-            </select>
+
+          <div className="space-y-4">
+            {[
+              { label: "Project name *", key: "title", placeholder: "My awesome project" },
+              { label: "Description", key: "description", placeholder: "What are you building?" },
+              { label: "Tech stack (comma-separated)", key: "techStack", placeholder: "React, Node.js, MongoDB" },
+              { label: "GitHub repository", key: "githubRepo", placeholder: "https://github.com/..." },
+            ].map(({ label, key, placeholder }) => (
+              <div key={key}>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{label}</label>
+                {key === "description" ? (
+                  <textarea
+                    rows={3}
+                    value={form[key]}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="input-base resize-none"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={form[key]}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="input-base"
+                  />
+                )}
+              </div>
+            ))}
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Priority</label>
+                <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} className="input-base">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Status</label>
+                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="input-base">
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Deadline</label>
+                <input type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} className="input-base" />
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Deadline</label>
-          <input type="date" value={form.deadline ? form.deadline.slice(0, 10) : ""}
-            onChange={(e) => set("deadline", e.target.value)}
-            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 outline-none" />
-        </div>
-
-        <div className="flex gap-3 pt-2">
-          <button onClick={onClose}
-            className="flex-1 text-xs py-2 border border-gray-700 text-gray-400 rounded-lg hover:bg-gray-800 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex-1 text-xs py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50">
-            {saving ? "Saving..." : initial ? "Update" : "Create"}
-          </button>
-        </div>
-      </div>
-    </div>
+          <div className="flex gap-3 mt-6">
+            <button onClick={onClose} className="btn-ghost flex-1">Cancel</button>
+            <button onClick={handleSave} disabled={saving || !form.title.trim()} className="btn-primary flex-1">
+              {saving ? "Saving…" : initial ? "Save changes" : "Create project"}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────
+// ── Main Page ──────────────────────────────────────────────────────────
 export default function ProjectPage() {
-  const { user } = useContext(AuthContext);
-  const navigate  = useNavigate();
+  const { user }   = useContext(AuthContext);
+  const navigate   = useNavigate();
 
-  const [projects, setProjects]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-
-  const [filterStatus,   setFilterStatus]   = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-  const [tab, setTab] = useState("all"); // "all" | "mine"
+  const [tab, setTab]                 = useState("mine");  // "mine" | "shared"
+  const [owned, setOwned]             = useState([]);
+  const [shared, setShared]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [showModal, setShowModal]     = useState(false);
+  const [editTarget, setEditTarget]   = useState(null);
+  const [filterStatus, setFilterStatus] = useState("all");
 
   // ── Fetch ──────────────────────────────────────────────────────────
   const fetchProjects = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const endpoint = tab === "mine" ? "/projects/mine" : "/projects";
-      const params   = [];
-      if (filterStatus   !== "all") params.push(`status=${filterStatus}`);
-      if (filterPriority !== "all") params.push(`priority=${filterPriority}`);
-      const query = params.length ? `?${params.join("&")}` : "";
-      const res = await api.get(`${endpoint}${query}`);
-      setProjects(res.data);
+      const [ownedRes, sharedRes] = await Promise.all([
+        api.get("/projects/owned"),
+        api.get("/projects/shared"),
+      ]);
+      setOwned(ownedRes.data);
+      setShared(sharedRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -243,12 +304,11 @@ export default function ProjectPage() {
     }
   };
 
-  useEffect(() => { fetchProjects(); }, [tab, filterStatus, filterPriority]);
+  useEffect(() => { fetchProjects(); }, []);
 
   // ── Actions ────────────────────────────────────────────────────────
   const handleCreate = async (form) => {
     await api.post("/projects", form);
-    setShowModal(false);
     fetchProjects();
   };
 
@@ -259,135 +319,135 @@ export default function ProjectPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this project?")) return;
+    if (!window.confirm("Delete this project? This cannot be undone.")) return;
     await api.delete(`/projects/${id}`);
     fetchProjects();
   };
 
-  const handleJoin = async (id) => {
-    await api.post(`/projects/${id}/join`);
-    fetchProjects();
+  const handleOpen = (workspaceId) => {
+    if (workspaceId) navigate(`/workspace/${workspaceId}`);
   };
 
-  const handleLeave = async (id) => {
-    await api.post(`/projects/${id}/leave`);
-    fetchProjects();
-  };
+  // ── Filtered data ──────────────────────────────────────────────────
+  const currentList = (tab === "mine" ? owned : shared).filter(
+    p => filterStatus === "all" || p.status === filterStatus
+  );
 
-  const openEditModal = (project) => {
-    setEditTarget({
-      ...project,
-      techStack: (project.techStack || []).join(", "),
-      deadline:  project.deadline ? project.deadline.slice(0, 10) : "",
-    });
-  };
-
-  // ── Stats ──────────────────────────────────────────────────────────
-  const stats = {
-    total:     projects.length,
-    active:    projects.filter((p) => p.status === "active").length,
-    completed: projects.filter((p) => p.status === "completed").length,
-    mine:      projects.filter((p) => p.owner?._id === user?._id).length,
-  };
+  const tabs = [
+    { key: "mine",   label: "My Projects",    count: owned.length },
+    { key: "shared", label: "Shared With Me", count: shared.length },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 font-mono">
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="page-container">
+      <div className="content-container">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-start justify-between mb-8"
+        >
           <div>
-            <h1 className="text-lg font-bold text-white">Projects</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Manage and explore your projects</p>
+            <h1 className="text-2xl font-bold text-white mb-1" style={{ letterSpacing: "-0.02em" }}>Projects</h1>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Your workspaces are private — only invited members can access them.
+            </p>
           </div>
-          <button onClick={() => setShowModal(true)}
-            className="text-xs px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors">
+          <button onClick={() => { setEditTarget(null); setShowModal(true); }} className="btn-primary">
             + New Project
           </button>
-        </div>
+        </motion.div>
 
-        {/* ── Stats ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "total",     val: stats.total },
-            { label: "active",    val: stats.active },
-            { label: "completed", val: stats.completed },
-            { label: "owned",     val: stats.mine },
-          ].map((s) => (
-            <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-              <p className="text-xs text-gray-500 uppercase tracking-widest">{s.label}</p>
-              <p className="text-2xl font-bold text-white mt-0.5">{s.val}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Tabs + Filters ── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-0.5">
-            {["all", "mine"].map((t) => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`text-xs px-4 py-1.5 rounded-md transition-colors ${
-                  tab === t ? "bg-emerald-700 text-white" : "text-gray-400 hover:text-white"
-                }`}>
-                {t === "all" ? "All Projects" : "My Projects"}
+        {/* ── Tabs + Filter ── */}
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--bg-raised)", border: "1px solid var(--border-muted)" }}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className="relative px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ color: tab === t.key ? "white" : "var(--text-muted)" }}
+              >
+                {tab === t.key && (
+                  <motion.span layoutId="tab-bg" className="absolute inset-0 rounded-lg bg-brand" style={{ zIndex: 0 }} />
+                )}
+                <span className="relative z-10">{t.label}</span>
+                <span className="relative z-10 ml-2 text-xs px-1.5 py-0.5 rounded-full"
+                  style={{ background: "rgba(255,255,255,0.1)", color: tab === t.key ? "white" : "var(--text-muted)" }}>
+                  {t.count}
+                </span>
               </button>
             ))}
           </div>
 
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-gray-900 text-xs text-gray-300 border border-gray-700 rounded-lg px-3 py-1.5 outline-none">
-            <option value="all">All Status</option>
-            <option value="active">active</option>
-            <option value="completed">completed</option>
-            <option value="archived">archived</option>
-          </select>
-
-          <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
-            className="bg-gray-900 text-xs text-gray-300 border border-gray-700 rounded-lg px-3 py-1.5 outline-none">
-            <option value="all">All Priority</option>
-            <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low">low</option>
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="input-base w-36 py-2 text-sm"
+          >
+            <option value="all">All status</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="archived">Archived</option>
           </select>
         </div>
 
-        {/* ── Grid ── */}
+        {/* ── Project Grid ── */}
         {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-gray-600 text-sm">No projects found</p>
-            <button onClick={() => setShowModal(true)} className="mt-3 text-xs text-emerald-400 hover:underline">
-              Create your first project →
-            </button>
-          </div>
-        ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((p) => (
-              <ProjectCard
-                key={p._id}
-                project={p}
-                currentUser={user}
-                onJoin={handleJoin}
-                onLeave={handleLeave}
-                onDelete={handleDelete}
-                onEdit={openEditModal}
-                onOpen={(id) => navigate(`/workspace/${id}`)}
-              />
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="skeleton h-48 rounded-2xl" />
             ))}
           </div>
+        ) : currentList.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="flex flex-col items-center justify-center py-24 text-center"
+          >
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-3xl"
+              style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)" }}>
+              {tab === "mine" ? "◈" : "✉"}
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">
+              {tab === "mine" ? "No projects yet" : "No shared projects"}
+            </h3>
+            <p className="text-sm max-w-xs" style={{ color: "var(--text-muted)" }}>
+              {tab === "mine"
+                ? "Create your first project and invite team members to collaborate."
+                : "When someone invites you to their project and you accept, it'll appear here."}
+            </p>
+            {tab === "mine" && (
+              <button onClick={() => setShowModal(true)} className="btn-primary mt-6">
+                + Create your first project
+              </button>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div
+            layout
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          >
+            <AnimatePresence>
+              {currentList.map(project => (
+                <ProjectCard
+                  key={project._id}
+                  project={project}
+                  currentUser={user}
+                  onEdit={p => { setEditTarget(p); setShowModal(true); }}
+                  onDelete={handleDelete}
+                  onOpen={handleOpen}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
 
-      {/* ── Modals ── */}
-      {showModal && (
-        <ProjectModal onClose={() => setShowModal(false)} onSave={handleCreate} />
-      )}
-      {editTarget && (
-        <ProjectModal initial={editTarget} onClose={() => setEditTarget(null)} onSave={handleEdit} />
-      )}
+      {/* ── Modal ── */}
+      <ProjectModal
+        open={showModal}
+        onClose={() => { setShowModal(false); setEditTarget(null); }}
+        onSave={editTarget ? handleEdit : handleCreate}
+        initial={editTarget}
+      />
     </div>
   );
 }

@@ -1,466 +1,445 @@
 // frontend/src/pages/Workspace.jsx
+// Full VS Code-like IDE: real filesystem, real terminal, multi-file tabs
 
 import { useState, useContext, useEffect, useCallback, useRef } from "react";
-import { useParams } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import { useParams }        from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { AuthContext }      from "../context/AuthContext";
 import { useCollaboration } from "../hooks/useCollaboration";
-import CodeEditor from "../components/CodeEditor";
-import ChatBox from "../components/ChatBox";
-import AIAssistant from "../components/AIAssistant";
-import KanbanBoard from "../components/KanbanBoard";
-import { useExportFile } from "../hooks/useExportFile";
-import api from "../services/api";
+import { useFilesystem }    from "../hooks/useFilesystem";
+import CodeEditor           from "../components/CodeEditor";
+import ChatBox              from "../components/ChatBox";
+import AIAssistant          from "../components/AIAssistant";
+import KanbanBoard          from "../components/KanbanBoard";
+import FileExplorer         from "../components/ide/FileExplorer";
+import RealTerminal         from "../components/ide/RealTerminal";
+import api                  from "../services/api";
+import socket               from "../socket/socket";
 
-const LANG_COLORS = {
-  javascript: "bg-yellow-500", typescript: "bg-blue-500",
-  python: "bg-green-500",      rust: "bg-orange-500",
-  go: "bg-cyan-500",           java: "bg-red-500",
-  cpp: "bg-purple-500",        c: "bg-blue-400",
-  html: "bg-orange-400",       css: "bg-pink-500",
-  json: "bg-gray-400",         markdown: "bg-gray-300",
+// ── File icon colours ──────────────────────────────────────────────────
+const LANG_DOT = {
+  javascript:"bg-yellow-400", typescript:"bg-blue-400", python:"bg-green-400",
+  java:"bg-red-400", cpp:"bg-purple-400", c:"bg-blue-300",
+  html:"bg-orange-400", css:"bg-pink-400", json:"bg-gray-400", markdown:"bg-gray-300",
 };
 
-const ALL_LANGUAGES = [
-  "javascript","typescript","python","rust","go","java","cpp","c",
-  "csharp","php","ruby","swift","kotlin","html","css","scss",
-  "json","markdown","sql","shell","yaml","xml","plaintext",
-];
+// ── Language detection ─────────────────────────────────────────────────
+const getLang = (name) => ({
+  js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",
+  py:"python",java:"java",cpp:"cpp",cc:"cpp",c:"c",cs:"csharp",
+  html:"html",css:"css",scss:"css",json:"json",md:"markdown",
+  sh:"shell",yml:"yaml",yaml:"yaml",rs:"rust",go:"go",rb:"ruby",
+  php:"php",kt:"kotlin",swift:"swift",sql:"sql",txt:"plaintext",
+}[name.split(".").pop()?.toLowerCase()] || "plaintext");
 
-// ── New File Modal ────────────────────────────────────────────────────
-function NewFileModal({ onClose, onCreate }) {
-  const [name,     setName]     = useState("");
-  const [language, setLanguage] = useState("javascript");
-  const [creating, setCreating] = useState(false);
-  const [error,    setError]    = useState("");
-  const importRef = useRef();
+// ── Can this file be executed? ─────────────────────────────────────────
+const EXECUTABLE = ["python","javascript","typescript","java","cpp","c"];
+const canRun = (lang) => EXECUTABLE.includes(lang?.toLowerCase());
 
-  const handleNameChange = (val) => {
-    setName(val);
-    const ext = val.split(".").pop()?.toLowerCase();
-    const map = {
-      js:"javascript", jsx:"javascript", ts:"typescript", tsx:"typescript",
-      py:"python", rs:"rust", go:"go", java:"java", cpp:"cpp", c:"c",
-      cs:"csharp", php:"php", rb:"ruby", swift:"swift", kt:"kotlin",
-      html:"html", css:"css", scss:"scss", json:"json", md:"markdown",
-      sql:"sql", sh:"shell", yaml:"yaml", yml:"yaml", xml:"xml",
-    };
-    if (map[ext]) setLanguage(map[ext]);
-  };
-
-  const handleCreate = async () => {
-    if (!name.trim()) { setError("File name is required"); return; }
-    try {
-      setCreating(true);
-      await onCreate({ name: name.trim(), language });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to create file");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const content = ev.target.result;
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      const map = {
-        js:"javascript", jsx:"javascript", ts:"typescript", tsx:"typescript",
-        py:"python", rs:"rust", go:"go", java:"java", cpp:"cpp", c:"c",
-        cs:"csharp", php:"php", rb:"ruby", swift:"swift", kt:"kotlin",
-        html:"html", css:"css", scss:"scss", json:"json", md:"markdown",
-        sql:"sql", sh:"shell", yaml:"yaml", yml:"yaml", xml:"xml",
-      };
-      const detectedLang = map[ext] || "plaintext";
-      try {
-        setCreating(true);
-        await onCreate({ name: file.name, language: detectedLang, content });
-        onClose();
-      } catch (err) {
-        setError(err.response?.data?.message || "Failed to import file");
-      } finally {
-        setCreating(false);
-      }
-    };
-    reader.readAsText(file);
-  };
-
+// ── Editor Tabs ────────────────────────────────────────────────────────
+function EditorTabs({ openFiles, activeFilePath, onSelect, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-white">New File</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
-        </div>
-
-        {error && <p className="text-xs text-red-400">{error}</p>}
-
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">File Name</label>
-          <input
-            value={name}
-            onChange={(e) => handleNameChange(e.target.value)}
-            placeholder="e.g. main.py, App.tsx, server.go"
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            autoFocus
-            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Language</label>
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}
-            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 outline-none">
-            {ALL_LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </div>
-
-        <div className="border-t border-gray-800 pt-3">
-          <p className="text-xs text-gray-600 mb-2">Or import from your computer:</p>
-          <input ref={importRef} type="file" onChange={handleImport} className="hidden" />
-          <button onClick={() => importRef.current.click()} disabled={creating}
-            className="w-full text-xs py-2 border border-dashed border-gray-600 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors disabled:opacity-50">
-            {creating ? "Importing..." : "📁 Choose File from Computer"}
-          </button>
-        </div>
-
-        <div className="flex gap-3">
-          <button onClick={onClose}
-            className="flex-1 text-xs py-2 border border-gray-700 text-gray-400 rounded-lg hover:bg-gray-800">
-            Cancel
-          </button>
-          <button onClick={handleCreate} disabled={creating}
-            className="flex-1 text-xs py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg disabled:opacity-50">
-            {creating ? "Creating..." : "Create"}
-          </button>
-        </div>
-      </div>
+    <div className="flex items-end overflow-x-auto flex-shrink-0"
+      style={{ background: "#252526", borderBottom: "1px solid #1e1e1e", minHeight: 35 }}>
+      {openFiles.map((f) => {
+        const isActive = f.path === activeFilePath;
+        const dotCls   = LANG_DOT[getLang(f.name)] || "bg-gray-400";
+        return (
+          <div key={f.path}
+            onClick={() => onSelect(f.path)}
+            className="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer border-r flex-shrink-0 group transition-colors"
+            style={{
+              borderColor: "#1e1e1e",
+              background: isActive ? "#1e1e1e" : "transparent",
+              borderTop: isActive ? "1px solid #007acc" : "1px solid transparent",
+              minWidth: 80, maxWidth: 180,
+            }}>
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotCls}`} />
+            <span className="text-xs truncate flex-1" style={{ color: isActive ? "#fff" : "#969696" }}>
+              {f.name}
+              {f.dirty && <span style={{ color: "#ffe585" }}>●</span>}
+            </span>
+            <button onClick={(e) => { e.stopPropagation(); onClose(f.path); }}
+              className="text-xs w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-white/20 transition-all flex-shrink-0"
+              style={{ color: "#969696" }}>✕</button>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ── File Tree Item ────────────────────────────────────────────────────
-function FileItem({ file, isActive, currentUserId, onClick, onDelete }) {
-  const isMyFile = file.owner?._id === currentUserId;
-  const dotColor = LANG_COLORS[file.language] || "bg-gray-400";
-
+// ── Resize Handle ──────────────────────────────────────────────────────
+function ResizeHandle({ onMouseDown }) {
   return (
-    <div onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-2 cursor-pointer rounded-lg group transition-colors ${
-        isActive ? "bg-gray-700 border border-gray-600" : "hover:bg-gray-800"
-      }`}>
-      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
-      <span className="text-xs text-gray-200 flex-1 truncate">{file.name}</span>
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <div title={file.owner?.name}
-          className="w-4 h-4 rounded-full bg-emerald-800 flex items-center justify-center text-xs font-bold text-emerald-200">
-          {file.owner?.name?.[0]?.toUpperCase()}
-        </div>
-        {isMyFile && (
-          <button onClick={(e) => { e.stopPropagation(); onDelete(file._id); }}
-            className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xs">
-            ✕
-          </button>
-        )}
-      </div>
-    </div>
+    <div onMouseDown={onMouseDown}
+      className="h-1 flex-shrink-0 cursor-row-resize transition-colors"
+      style={{ background: "#2d2d2d" }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "#007acc")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "#2d2d2d")} />
   );
 }
 
-// ── Main Workspace ────────────────────────────────────────────────────
+// ── Run command builder ────────────────────────────────────────────────
+function buildRunCmd(lang, filePath) {
+  const p   = filePath.replace(/\\/g, "/");
+  const dir = p.includes("/") ? p.split("/").slice(0, -1).join("/") : ".";
+  const base = p.split("/").pop()?.replace(/\.[^.]+$/, "") || "main";
+  switch (lang) {
+    case "python":     return `python "${p}"\r`;
+    case "javascript":
+    case "typescript": return `node "${p}"\r`;
+    case "java":       return `javac "${p}" && java -cp "${dir}" ${base}\r`;
+    case "cpp":        return `g++ -std=c++17 -o "${dir}/${base}" "${p}" && "${dir}/${base}"\r`;
+    case "c":          return `gcc -o "${dir}/${base}" "${p}" && "${dir}/${base}"\r`;
+    default:           return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main Workspace
+// ═══════════════════════════════════════════════════════════════════════
 export default function Workspace() {
   const { id: workspaceId } = useParams();
-  const { user } = useContext(AuthContext);
+  const { user }            = useContext(AuthContext);
 
   const { isConnected, members, messages, sendChat, remoteCursors, moveCursor } =
     useCollaboration(workspaceId, user);
 
-  const [files,        setFiles]        = useState([]);
-  const [activeFile,   setActiveFile]   = useState(null);
-  const [showNewFile,  setShowNewFile]  = useState(false);
-  const [saving,       setSaving]       = useState(false);
-  const [localContent, setLocalContent] = useState("");
-  const [activeTab,    setActiveTab]    = useState("editor");
-  const [workspace,    setWorkspace]    = useState(null); // ✅ workspace info
-  const { downloadFile, downloadAllAsZip, copyToClipboard } = useExportFile();
-  const [copied, setCopied] = useState(false);
+  const fs = useFilesystem(workspaceId);
 
-  const isMyFile = activeFile?.owner?._id === user?._id;
+  // ── State ────────────────────────────────────────────────────────
+  const [workspace,      setWorkspace]      = useState(null);
+  const [activeTab,      setActiveTab]      = useState("editor");   // editor | kanban
+  const [openFiles,      setOpenFiles]      = useState([]);         // { path, name, content, language, dirty }
+  const [activeFilePath, setActiveFilePath] = useState(null);
+  const [saving,         setSaving]         = useState(false);
+  const [terminalOpen,   setTerminalOpen]   = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(230);
+  const [sidebarW,       setSidebarW]       = useState(220);
+  const [sidebarOpen,    setSidebarOpen]    = useState(true);
+  const [isRunning,      setIsRunning]      = useState(false);
+  const [runError,       setRunError]       = useState("");
 
-  // ✅ Workspace info load karo (owner pata karne ke liye)
-  const loadWorkspace = useCallback(async () => {
-    try {
-      const res = await api.get(`/workspaces/${workspaceId}`);
-      setWorkspace(res.data);
-    } catch (err) { console.error(err); }
+  const autoSaveTimer = useRef(null);
+  const terminalRef   = useRef(null);
+
+  // ── Computed ─────────────────────────────────────────────────────
+  const activeFile      = openFiles.find((f) => f.path === activeFilePath) || null;
+  const isWorkspaceAdmin = workspace?.owner?._id === user?._id || workspace?.owner === user?._id;
+
+  // ── Load workspace info ──────────────────────────────────────────
+  useEffect(() => {
+    api.get(`/workspaces/${workspaceId}`)
+      .then((r) => setWorkspace(r.data))
+      .catch(console.error);
+    fs.refresh();
   }, [workspaceId]);
 
-  const loadFiles = useCallback(async () => {
+  // ── Open file from explorer ──────────────────────────────────────
+  const openFile = useCallback(async (item) => {
+    if (item.type === "directory") return;
+
+    // Already open → just activate
+    const existing = openFiles.find((f) => f.path === item.path);
+    if (existing) { setActiveFilePath(item.path); return; }
+
     try {
-      const res = await api.get(`/workspaces/${workspaceId}/files`);
-      setFiles(res.data);
-    } catch (err) { console.error(err); }
-  }, [workspaceId]);
+      const content  = await fs.readFile(item.path);
+      const language = getLang(item.name);
+      setOpenFiles((prev) => [...prev, { path: item.path, name: item.name, content, language, dirty: false }]);
+      setActiveFilePath(item.path);
+    } catch (e) {
+      console.error("openFile:", e);
+    }
+  }, [openFiles, fs]);
 
-  useEffect(() => {
-    loadWorkspace();
-    loadFiles();
-  }, [loadWorkspace, loadFiles]);
-
-  useEffect(() => {
-    setLocalContent(activeFile?.content || "");
-  }, [activeFile?._id]);
-
-  const handleCreate = async ({ name, language, content }) => {
-    const res = await api.post(`/workspaces/${workspaceId}/files`, { name, language, content });
-    await loadFiles();
-    setActiveFile(res.data);
-  };
-
-  const handleCodeChange = async (val) => {
-    setLocalContent(val);
-    if (!isMyFile) return;
-    try {
-      setSaving(true);
-      await api.put(`/workspaces/${workspaceId}/files/${activeFile._id}`, { content: val });
-      setActiveFile((f) => ({ ...f, content: val }));
-      setFiles((prev) => prev.map((f) => f._id === activeFile._id ? { ...f, content: val } : f));
-    } catch (err) { console.error(err); }
-    finally { setSaving(false); }
-  };
-
-  const handleDelete = async (fileId) => {
-    if (!window.confirm("Delete this file?")) return;
-    await api.delete(`/workspaces/${workspaceId}/files/${fileId}`);
-    if (activeFile?._id === fileId) setActiveFile(null);
-    loadFiles();
-  };
-
-  const handleImportFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const content = event.target.result;
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      const langMap = {
-        js:"javascript", jsx:"javascript", ts:"typescript", tsx:"typescript",
-        py:"python", rs:"rust", go:"go", java:"java", cpp:"cpp", c:"c",
-        cs:"csharp", php:"php", rb:"ruby", swift:"swift", kt:"kotlin",
-        html:"html", css:"css", scss:"scss", json:"json", md:"markdown",
-        sql:"sql", sh:"shell", yaml:"yaml", yml:"yaml", xml:"xml",
-      };
-      const language = langMap[ext] || "plaintext";
-      try {
-        const res = await api.post(`/workspaces/${workspaceId}/files`, { name: file.name, language, content });
-        await loadFiles();
-        setActiveFile(res.data);
-      } catch (err) {
-        alert(err.response?.data?.message || "Failed to import file");
+  // ── Close tab ────────────────────────────────────────────────────
+  const closeFile = useCallback((path) => {
+    setOpenFiles((prev) => {
+      const idx      = prev.findIndex((f) => f.path === path);
+      const newFiles = prev.filter((f) => f.path !== path);
+      if (activeFilePath === path) {
+        const next = newFiles[idx] || newFiles[idx - 1] || null;
+        setActiveFilePath(next?.path || null);
       }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
+      return newFiles;
+    });
+  }, [activeFilePath]);
 
-  // ✅ Check karo current user workspace ka admin hai ya nahi
-  const isWorkspaceAdmin = workspace?.owner?._id === user?._id ||
-                           workspace?.owner === user?._id;
+  // ── Code change → auto-save ──────────────────────────────────────
+  const handleCodeChange = useCallback((val) => {
+    if (!activeFilePath) return;
+
+    setOpenFiles((prev) =>
+      prev.map((f) => f.path === activeFilePath ? { ...f, content: val, dirty: true } : f)
+    );
+
+    // Debounced auto-save to filesystem (800ms)
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      try {
+        setSaving(true);
+        await fs.writeFile(activeFilePath, val);
+        setOpenFiles((prev) =>
+          prev.map((f) => f.path === activeFilePath ? { ...f, dirty: false } : f)
+        );
+      } catch (e) { console.error("auto-save:", e); }
+      finally { setSaving(false); }
+    }, 800);
+  }, [activeFilePath, fs]);
+
+  // ── Run code via terminal ────────────────────────────────────────
+  const handleRunCode = useCallback(async () => {
+    if (!activeFile) return;
+    // Save first
+    try {
+      await fs.writeFile(activeFilePath, activeFile.content);
+      setOpenFiles((prev) => prev.map((f) => f.path === activeFilePath ? { ...f, dirty: false } : f));
+    } catch (_) {}
+
+    const cmd = buildRunCmd(activeFile.language, activeFilePath);
+    if (!cmd) { setRunError("Language not executable"); setTimeout(() => setRunError(""), 3000); return; }
+
+    setTerminalOpen(true);
+    setIsRunning(true);
+    setTimeout(() => {
+      terminalRef.current?.runCommand(cmd);
+      setIsRunning(false);
+    }, terminalOpen ? 100 : 500); // if terminal just opened, give it time
+  }, [activeFile, activeFilePath, fs, terminalOpen]);
+
+  // ── Terminal resize drag ─────────────────────────────────────────
+  const handleTermResizeDrag = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY, startH = terminalHeight;
+    const move   = (mv) => {
+      const newH = startH - (mv.clientY - startY);
+      if (newH >= 120 && newH <= window.innerHeight * 0.75) setTerminalHeight(newH);
+    };
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup",   up);
+  }, [terminalHeight]);
+
+  // ── Sidebar resize drag ──────────────────────────────────────────
+  const handleSidebarResizeDrag = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX, startW = sidebarW;
+    const move   = (mv) => {
+      const newW = startW + (mv.clientX - startX);
+      if (newW >= 150 && newW <= 400) setSidebarW(newW);
+    };
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup",   up);
+  }, [sidebarW]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-48px)] bg-gray-950 text-gray-100 font-mono overflow-hidden">
+    <div className="flex flex-col overflow-hidden transition-all duration-200" style={{ height: "100vh", paddingTop: "var(--navbar-height, 56px)", background: "#1e1e1e", fontFamily: "Consolas, 'JetBrains Mono', monospace" }}>
 
-      {/* Tab Switcher */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-800 bg-gray-900 flex-shrink-0">
-        <button onClick={() => setActiveTab("editor")}
-          className={`text-xs px-4 py-1.5 rounded-lg transition-colors ${
-            activeTab === "editor" ? "bg-emerald-700 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
-          }`}>
-          Code Editor
-        </button>
-        <button onClick={() => setActiveTab("kanban")}
-          className={`text-xs px-4 py-1.5 rounded-lg transition-colors ${
-            activeTab === "kanban" ? "bg-emerald-700 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
-          }`}>
-          Task Board
-        </button>
+      {/* ── Top Tab Bar ── */}
+      <div className="flex items-center gap-1 px-3 flex-shrink-0"
+        style={{ background: "#3c3c3c", borderBottom: "1px solid #252526", height: 36 }}>
+        {[["editor", "⌨ Code Editor"], ["kanban", "📋 Task Board"]].map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className="text-xs px-3 py-1 rounded transition-colors"
+            style={{
+              background: activeTab === key ? "#1e1e1e" : "transparent",
+              color:      activeTab === key ? "#ffffff" : "#969696",
+            }}>
+            {label}
+          </button>
+        ))}
 
-        {/* ✅ Admin badge top bar mein */}
-        <div className="ml-auto">
-          {isWorkspaceAdmin ? (
-            <span className="text-xs px-3 py-1 rounded-full border border-purple-700 bg-purple-900 text-purple-300">
-              👑 Admin
-            </span>
-          ) : (
-            <span className="text-xs px-3 py-1 rounded-full border border-gray-700 bg-gray-800 text-gray-400">
-              Member
-            </span>
+        {/* Run + Status in top bar */}
+        <div className="ml-auto flex items-center gap-2">
+          {activeTab === "editor" && activeFile && canRun(activeFile.language) && (
+            <>
+              {runError && <span className="text-xs" style={{ color: "#f87171" }}>{runError}</span>}
+              <button onClick={handleRunCode} disabled={isRunning}
+                className="text-xs px-3 py-1 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                style={{ background: "#197819", color: "#fff" }}>
+                {isRunning ? <><span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" />Running…</> : "▶ Run"}
+              </button>
+            </>
           )}
+          {saving && <span className="text-xs animate-pulse" style={{ color: "#858585" }}>Saving…</span>}
+          <span className="text-xs px-2 py-0.5 rounded"
+            style={{ background: isWorkspaceAdmin ? "#37306b" : "#2d2d2d", color: isWorkspaceAdmin ? "#c084fc" : "#858585", border: `1px solid ${isWorkspaceAdmin ? "#7c3aed" : "#3c3c3c"}` }}>
+            {isWorkspaceAdmin ? "👑 Admin" : "Member"}
+          </span>
         </div>
       </div>
 
-      {/* Kanban Tab */}
+      {/* ── Kanban Tab ── */}
       {activeTab === "kanban" ? (
         <div className="flex-1 overflow-hidden">
           <KanbanBoard workspaceId={workspaceId} members={members} />
         </div>
       ) : (
 
-        /* Editor Tab */
+        /* ── Editor Tab ── */
         <div className="flex flex-1 overflow-hidden">
 
-          {/* File Tree Sidebar */}
-          <div className="w-56 flex flex-col bg-gray-900 border-r border-gray-800 flex-shrink-0">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
-              <span className="text-xs text-gray-500 uppercase tracking-widest">Files</span>
-              <div className="flex items-center gap-1">
-                <label className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs cursor-pointer" title="Import File">
-                  ↑
-                  <input type="file" accept="*/*" onChange={handleImportFile} className="hidden" />
-                </label>
-                <button onClick={() => downloadAllAsZip(files, "workspace")} disabled={files.length === 0}
-                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-xs disabled:opacity-30" title="Download All as ZIP">
-                  ↓
-                </button>
-                <button onClick={() => setShowNewFile(true)}
-                  className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded transition-colors text-base" title="New File">
-                  +
-                </button>
-              </div>
-            </div>
+          {/* ── File Explorer Sidebar ── */}
+          {sidebarOpen && (
+            <>
+              <div style={{ width: sidebarW, minWidth: 150, maxWidth: 400, flexShrink: 0, borderRight: "1px solid #252526", display: "flex", flexDirection: "column" }}>
+                {/* Online members footer */}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  <FileExplorer
+                    workspaceId={workspaceId}
+                    fs={fs}
+                    onOpenFile={openFile}
+                  />
+                </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-              {files.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-xs text-gray-600">No files yet</p>
-                  <button onClick={() => setShowNewFile(true)} className="text-xs text-emerald-500 hover:underline mt-1">
-                    Create one →
+                {/* Online members */}
+                <div className="flex-shrink-0 border-t p-2" style={{ borderColor: "#252526", background: "#252526" }}>
+                  <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: "#858585" }}>
+                    Online — {members.length}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {members.map((m, i) => {
+                      const mIsAdmin = workspace?.owner?._id === m.userId || workspace?.owner === m.userId;
+                      return (
+                        <div key={i} className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                            style={{ background: m.color, color: "#1e1e1e" }}>
+                            {m.name?.[0]?.toUpperCase()}
+                          </div>
+                          <span className="text-[10px] flex-1 truncate" style={{ color: "#cccccc" }}>{m.name}</span>
+                          {mIsAdmin && <span className="text-[9px]" style={{ color: "#c084fc" }}>👑</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sidebar resize handle */}
+              <div onMouseDown={handleSidebarResizeDrag}
+                className="w-1 flex-shrink-0 cursor-col-resize transition-colors"
+                style={{ background: "#2d2d2d" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#007acc")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#2d2d2d")} />
+            </>
+          )}
+
+          {/* ── Editor + Terminal ── */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+            {/* Sidebar toggle button */}
+            <button onClick={() => setSidebarOpen((v) => !v)}
+              className="absolute left-0 top-1/2 z-10 w-4 h-12 flex items-center justify-center rounded-r transition-colors"
+              style={{ background: "#3c3c3c", color: "#858585", transform: "translateY(-50%)", marginLeft: sidebarOpen ? sidebarW : 0 }}
+              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}>
+              {sidebarOpen ? "‹" : "›"}
+            </button>
+
+            {openFiles.length === 0 ? (
+              /* ── Empty State ── */
+              <div className="flex-1 flex flex-col items-center justify-center gap-4"
+                style={{ background: "#1e1e1e" }}>
+                <div className="text-5xl mb-2">💻</div>
+                <p className="text-sm" style={{ color: "#858585" }}>No file is open</p>
+                <p className="text-xs" style={{ color: "#555" }}>Select a file from the Explorer or create a new one</p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => fs.createFile("main.py", '# Hello World\nprint("Hello, DevCollab!")\n')}
+                    className="text-xs px-4 py-2 rounded" style={{ background: "#0e639c", color: "#fff" }}>
+                    + New Python File
+                  </button>
+                  <button onClick={() => {
+                    if (terminalOpen) setTerminalOpen(false);
+                    else { setTerminalOpen(true); }
+                  }}
+                    className="text-xs px-4 py-2 rounded" style={{ background: "#3c3c3c", color: "#cccccc" }}>
+                    {terminalOpen ? "Hide" : "Open"} Terminal
                   </button>
                 </div>
-              ) : (
-                files.map((file) => (
-                  <FileItem
-                    key={file._id}
-                    file={file}
-                    isActive={activeFile?._id === file._id}
-                    currentUserId={user?._id}
-                    onClick={() => setActiveFile(file)}
-                    onDelete={handleDelete}
-                  />
-                ))
-              )}
-            </div>
-
-            {/* ✅ Members list with Admin badge */}
-            <div className="border-t border-gray-800 p-3">
-              <p className="text-xs text-gray-600 uppercase tracking-widest mb-2">
-                Online — {members.length}
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {members.map((m, i) => {
-                  const memberIsAdmin = workspace?.owner?._id === m.userId ||
-                                       workspace?.owner === m.userId;
-                  return (
-                    <div key={i}
-                      title={`${m.name} — ${m.status || "online"}`}
-                      className="flex items-center gap-2">
-                      <div
-                        style={{ background: m.color }}
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-gray-900 flex-shrink-0">
-                        {m.name?.[0]?.toUpperCase()}
-                      </div>
-                      <span className="text-xs text-gray-300 flex-1 truncate">{m.name}</span>
-                      {/* ✅ Admin / Member badge */}
-                      {memberIsAdmin ? (
-                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-900 border border-purple-700 text-purple-300 flex-shrink-0">
-                          👑
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-600 flex-shrink-0">user</span>
-                      )}
-                    </div>
-                  );
-                })}
               </div>
-            </div>
-          </div>
-
-          {/* Editor */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {activeFile ? (
+            ) : (
               <>
-                <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${LANG_COLORS[activeFile.language] || "bg-gray-400"}`} />
-                    <span className="text-xs text-gray-300">{activeFile.name}</span>
-                    <span className="text-xs text-gray-600">·</span>
-                    <span className="text-xs text-gray-600">{activeFile.language}</span>
-                    {!isMyFile && (
-                      <span className="text-xs px-2 py-0.5 bg-yellow-900 border border-yellow-700 text-yellow-300 rounded-full">
-                        Read Only — {activeFile.owner?.name}'s file
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {saving && <span className="text-xs text-gray-500 animate-pulse">Saving...</span>}
-                    <button
-                      onClick={async () => {
-                        const ok = await copyToClipboard(localContent);
-                        if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+                {/* ── Editor Tabs ── */}
+                <EditorTabs
+                  openFiles={openFiles}
+                  activeFilePath={activeFilePath}
+                  onSelect={setActiveFilePath}
+                  onClose={closeFile}
+                />
+
+                {/* ── Monaco Editor ── */}
+                <div className="flex-1 overflow-hidden" style={{ height: terminalOpen ? `calc(100% - ${terminalHeight}px - 29px)` : "100%" }}>
+                  <div className="h-full">
+                    <CodeEditor
+                      code={activeFile?.content || ""}
+                      fileName={activeFile?.name || "untitled"}
+                      remoteCursors={remoteCursors}
+                      readOnly={false}
+                      onChange={{
+                        onCodeChange: handleCodeChange,
+                        onCursorMove: (line, col) => moveCursor(line, col),
                       }}
-                      className="text-xs px-2 py-1 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white rounded-lg transition-colors">
-                      {copied ? "Copied!" : "Copy"}
-                    </button>
-                    <button onClick={() => downloadFile(activeFile.name, localContent)}
-                      className="text-xs px-2 py-1 border border-gray-700 hover:border-emerald-600 text-gray-400 hover:text-emerald-400 rounded-lg transition-colors">
-                      ↓ Download
-                    </button>
-                    {isConnected
-                      ? <span className="text-xs text-emerald-400 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />Live</span>
-                      : <span className="text-xs text-red-400">Offline</span>
-                    }
+                    />
                   </div>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <CodeEditor
-                    code={localContent}
-                    fileName={activeFile.name}
-                    remoteCursors={remoteCursors}
-                    readOnly={!isMyFile}
-                    onChange={{
-                      onCodeChange: handleCodeChange,
-                      onCursorMove: (line, col) => moveCursor(line, col),
-                    }}
-                  />
                 </div>
               </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
-                <div className="w-12 h-12 bg-gray-900 border border-gray-800 rounded-2xl flex items-center justify-center text-2xl">📄</div>
-                <p className="text-sm text-gray-500">Select a file to start editing</p>
-                <button onClick={() => setShowNewFile(true)}
-                  className="text-xs px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors">
-                  + Create New File
-                </button>
-              </div>
             )}
+
+            {/* ── Terminal Panel ── */}
+            <AnimatePresence>
+              {terminalOpen && (
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: terminalHeight }}
+                  exit={{ height: 0 }}
+                  transition={{ duration: 0.15, ease: "easeInOut" }}
+                  className="flex flex-col flex-shrink-0 overflow-hidden"
+                  style={{ borderTop: "1px solid #252526" }}
+                >
+                  <ResizeHandle onMouseDown={handleTermResizeDrag} />
+                  <div className="flex-1 overflow-hidden">
+                    <RealTerminal
+                      ref={terminalRef}
+                      workspaceId={workspaceId}
+                      userId={user?._id}
+                      onFsChanged={() => fs.refresh()}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ── Terminal Toggle Button (bottom status bar) ── */}
+            <div className="flex items-center justify-between px-3 flex-shrink-0"
+              style={{ background: "#007acc", height: 22, minHeight: 22 }}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setTerminalOpen((v) => !v)}
+                  className="text-[10px] font-medium flex items-center gap-1 hover:bg-white/20 px-2 rounded transition-colors"
+                  style={{ color: "#fff", height: "100%" }}>
+                  ⌨ {terminalOpen ? "Hide Terminal" : "Show Terminal"}
+                </button>
+                {isConnected
+                  ? <span className="text-[10px] flex items-center gap-1" style={{ color: "#cef9ce" }}><span className="w-1.5 h-1.5 rounded-full bg-green-300" />Live</span>
+                  : <span className="text-[10px]" style={{ color: "#fecaca" }}>Offline</span>}
+              </div>
+              {activeFile && (
+                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {activeFile.language} · {activeFile.name}
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Chat Sidebar */}
-          <div className="w-64 flex flex-col bg-gray-900 border-l border-gray-800 flex-shrink-0">
+          {/* ── Chat Sidebar ── */}
+          <div className="flex-shrink-0 flex flex-col border-l" style={{ width: 256, borderColor: "#252526", background: "#252526" }}>
             <ChatBox messages={messages} onSend={sendChat} currentUser={user} />
           </div>
         </div>
       )}
 
-      {showNewFile && (
-        <NewFileModal onClose={() => setShowNewFile(false)} onCreate={handleCreate} />
-      )}
-
-      <AIAssistant currentCode={localContent} currentLanguage={activeFile?.language || "javascript"} />
+      <AIAssistant currentCode={activeFile?.content || ""} currentLanguage={activeFile?.language || "javascript"} />
     </div>
   );
 }

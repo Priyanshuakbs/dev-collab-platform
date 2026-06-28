@@ -19,6 +19,8 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const fileRoutes         = require("./routes/fileRoutes");
 const taskRoutes         = require("./routes/taskRoutes");
 const aiRoutes           = require("./routes/aiRoutes");
+const executeRoutes      = require("./routes/executeRoutes");
+const filesystemRoutes   = require("./routes/filesystemRoutes");
 
 connectDB();
 
@@ -34,11 +36,15 @@ app.use("/api/invitations",   invitationRoutes);
 app.use("/api/messages",      messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/ai",            aiRoutes);
+app.use("/api/execute",       executeRoutes);
 
 // ⚠️ IMPORTANT: nested routes BEFORE the base /workspaces route
 app.use("/api/workspaces/:workspaceId/files", fileRoutes);
 app.use("/api/workspaces/:workspaceId/tasks", taskRoutes);
 app.use("/api/workspaces",    workspaceRoutes);
+
+// ── Filesystem (real PTY-backed workspace files) ─────────────────────
+app.use("/api/fs/:workspaceId", filesystemRoutes);
 
 app.get("/", (req, res) => res.json({ message: "Dev Collab API running ✅" }));
 

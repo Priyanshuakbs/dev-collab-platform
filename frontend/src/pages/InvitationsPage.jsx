@@ -1,18 +1,21 @@
 // frontend/src/pages/InvitationsPage.jsx
-
 import { useState, useEffect, useContext } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { AuthContext } from "../context/AuthContext";
 import api from "../services/api";
+import {
+  GlassCard, GradientButton, Badge, Avatar, Modal,
+  Input, EmptyState, useToast, ToastContainer, Skeleton,
+} from "../components/ui/index.jsx";
 
-// ─── Send Invite Modal ────────────────────────────────────────────────
-function SendInviteModal({ onClose, onSent }) {
-  const { user }                    = useContext(AuthContext);
-  const [search,   setSearch]       = useState("");
-  const [users,    setUsers]        = useState([]);
-  const [projects, setProjects]     = useState([]);
-  const [selected, setSelected]     = useState({ user: null, project: null });
-  const [sending,  setSending]      = useState(false);
-  const [error,    setError]        = useState("");
+function SendInviteModal({ open, onClose, onSent }) {
+  const { user }                = useContext(AuthContext);
+  const [search, setSearch]     = useState("");
+  const [users, setUsers]       = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [selected, setSelected] = useState({ user: null, project: null });
+  const [sending, setSending]   = useState(false);
+  const [error, setError]       = useState("");
 
   useEffect(() => {
     if (!search.trim()) { setUsers([]); return; }
@@ -26,311 +29,275 @@ function SendInviteModal({ onClose, onSent }) {
   }, [search, user]);
 
   useEffect(() => {
+    if (!open) return;
     api.get("/projects/mine").then((res) => {
-      const owned = res.data.filter((p) => {
+      setProjects(res.data.filter((p) => {
         const ownerId = p.owner?._id || p.owner;
         return ownerId?.toString() === user?._id?.toString();
-      });
-      setProjects(owned);
+      }));
     }).catch(() => setProjects([]));
-  }, [user]);
+  }, [open, user]);
+
+  const handleClose = () => {
+    setSearch(""); setUsers([]); setSelected({ user: null, project: null }); setError(""); onClose();
+  };
 
   const handleSend = async () => {
     if (!selected.user)    { setError("Please select a user");    return; }
     if (!selected.project) { setError("Please select a project"); return; }
     try {
-      setSending(true);
-      setError("");
-      await api.post("/invitations", {
-        receiver:  selected.user._id,
-        projectId: selected.project._id,
-      });
-      onSent();
-      onClose();
+      setSending(true); setError("");
+      await api.post("/invitations", { receiver: selected.user._id, projectId: selected.project._id });
+      onSent(); handleClose();
     } catch (err) {
-      setError(err.response?.data?.message || "Invite bhejne mein error");
-    } finally {
-      setSending(false);
-    }
+      setError(err.response?.data?.message || "Failed to send invite");
+    } finally { setSending(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-white">Send Team Invite</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">✕</button>
-        </div>
-
+    <Modal open={open} onClose={handleClose} title="✉ Send Team Invite" width="max-w-lg">
+      <div className="space-y-5">
         <div>
-          <label className="text-xs text-gray-500 mb-1.5 block">User dhundo</label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email..."
-            className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded-lg border border-gray-700 focus:border-emerald-500 outline-none" />
-          {users.length > 0 && (
-            <div className="mt-1 bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
-              {users.map((u) => (
-                <button key={u._id}
-                  onClick={() => { setSelected((s) => ({ ...s, user: u })); setSearch(""); setUsers([]); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-700 transition-colors text-left">
-                  <div className="w-7 h-7 rounded-full bg-emerald-800 flex items-center justify-center text-xs font-bold text-emerald-200">
-                    {u.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm text-white">{u.name}</p>
-                    <p className="text-xs text-gray-500">{u.email}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          {selected.user && (
-            <div className="mt-2 flex items-center gap-2 bg-emerald-900 border border-emerald-700 rounded-lg px-3 py-2">
-              <div className="w-6 h-6 rounded-full bg-emerald-700 flex items-center justify-center text-xs font-bold text-white">
-                {selected.user.name?.[0]?.toUpperCase()}
-              </div>
-              <span className="text-sm text-emerald-200 flex-1">{selected.user.name}</span>
-              <button onClick={() => setSelected((s) => ({ ...s, user: null }))}
-                className="text-emerald-400 hover:text-white text-xs">✕</button>
-            </div>
-          )}
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-500 mb-1.5 block">Project select karo <span className="text-purple-400">(sirf tumhare owned projects)</span></label>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {projects.length === 0 ? (
-              <div className="text-center py-4 bg-gray-800 rounded-lg">
-                <p className="text-xs text-gray-500">No owned projects found</p>
-                <p className="text-xs text-gray-600 mt-1">Sirf 👑 Admin wale projects mein invite kar sakte ho</p>
-              </div>
-            ) : (
-              projects.map((p) => (
-                <button key={p._id} onClick={() => setSelected((s) => ({ ...s, project: p }))}
-                  className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
-                    selected.project?._id === p._id
-                      ? "border-emerald-600 bg-emerald-900 text-emerald-200"
-                      : "border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600"
-                  }`}>
-                  <span className="font-medium">{p.title}</span>
-                  <span className="text-xs text-purple-400 ml-2">👑 Admin</span>
-                </button>
-              ))
+          <Input label="Search team member" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email..." />
+          <AnimatePresence>
+            {users.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                className="mt-1 rounded-xl overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {users.map((u) => (
+                  <button key={u._id} onClick={() => { setSelected((s) => ({ ...s, user: u })); setSearch(""); setUsers([]); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left">
+                    <Avatar name={u.name} size="sm" />
+                    <div>
+                      <p className="text-sm text-white">{u.name}</p>
+                      <p className="text-xs text-gray-500">{u.email}</p>
+                    </div>
+                  </button>
+                ))}
+              </motion.div>
             )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {selected.user && (
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                className="mt-2 flex items-center gap-3 px-4 py-2.5 rounded-xl"
+                style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.3)" }}>
+                <Avatar name={selected.user.name} size="sm" />
+                <span className="text-sm text-purple-200 flex-1">{selected.user.name}</span>
+                <button onClick={() => setSelected((s) => ({ ...s, user: null }))}
+                  className="text-purple-400 hover:text-white text-xs w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">✕</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-gray-400 block mb-2">
+            Select project <span className="text-purple-400">(your owned projects only)</span>
+          </label>
+          <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+            {projects.length === 0 ? (
+              <div className="text-center py-6 rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <p className="text-xs text-gray-500">No owned projects — create one first</p>
+              </div>
+            ) : projects.map((p) => (
+              <motion.button key={p._id} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                onClick={() => setSelected((s) => ({ ...s, project: p }))}
+                className="w-full text-left px-4 py-3 rounded-xl transition-all"
+                style={{
+                  background: selected.project?._id === p._id ? "rgba(124,58,237,0.2)" : "rgba(255,255,255,0.03)",
+                  border: selected.project?._id === p._id ? "1px solid rgba(124,58,237,0.5)" : "1px solid rgba(255,255,255,0.06)",
+                }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-white">{p.title}</span>
+                  <Badge variant="admin">👑 Admin</Badge>
+                </div>
+                {p.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{p.description}</p>}
+              </motion.button>
+            ))}
           </div>
         </div>
 
-        {error && (
-          <p className="text-xs text-red-400 bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
+        <AnimatePresence>
+          {error && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="text-xs text-red-400 px-4 py-2.5 rounded-xl"
+              style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)" }}>
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         <div className="flex gap-3 pt-1">
-          <button onClick={onClose}
-            className="flex-1 text-xs py-2 border border-gray-700 text-gray-400 rounded-lg hover:bg-gray-800 transition-colors">
-            cancel
-          </button>
-          <button onClick={handleSend} disabled={sending || !selected.user || !selected.project}
-            className="flex-1 text-xs py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50">
-            {sending ? "Sending..." : "Send Invite"}
-          </button>
+          <GradientButton variant="ghost" onClick={handleClose} className="flex-1">Cancel</GradientButton>
+          <GradientButton onClick={handleSend} disabled={sending || !selected.user || !selected.project} className="flex-1">
+            {sending ? "Sending..." : "Send Invite →"}
+          </GradientButton>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-// ─── Invite Card ──────────────────────────────────────────────────────
 function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
   const [loading, setLoading] = useState("");
-
-  const handle = async (fn, key) => {
-    setLoading(key);
-    try { await fn(); } finally { setLoading(""); }
-  };
+  const handle = async (fn, key) => { setLoading(key); try { await fn(); } finally { setLoading(""); } };
+  const statusVariant = { pending: "yellow", accepted: "green", rejected: "red" };
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
+    <motion.div layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16, scale: 0.95 }} whileHover={{ scale: 1.005 }}
+      className="rounded-2xl p-5 flex flex-col gap-4"
+      style={{ background: "rgba(15,15,35,0.6)", border: "1px solid rgba(255,255,255,0.07)", backdropFilter: "blur(12px)", boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }}>
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-500 uppercase tracking-widest mb-0.5">Project</p>
-          <p className="text-sm font-bold text-white">{invite.project?.title}</p>
-          {invite.project?.description && (
-            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{invite.project.description}</p>
-          )}
+          <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Project</p>
+          <h3 className="text-base font-bold text-white">{invite.project?.title}</h3>
+          {invite.project?.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{invite.project.description}</p>}
           {invite.project?.techStack?.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {invite.project.techStack.slice(0, 3).map((t, i) => (
-                <span key={i} className="text-xs px-2 py-0.5 bg-gray-800 border border-gray-700 rounded-full text-emerald-300">{t}</span>
-              ))}
+            <div className="flex flex-wrap gap-1 mt-2">
+              {invite.project.techStack.slice(0, 3).map((t, i) => <Badge key={i} variant="blue">{t}</Badge>)}
             </div>
           )}
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${
-          invite.status === "pending"  ? "border-yellow-700 text-yellow-400 bg-yellow-900" :
-          invite.status === "accepted" ? "border-emerald-700 text-emerald-400 bg-emerald-900" :
-                                         "border-red-800 text-red-400 bg-red-900"
-        }`}>
-          {invite.status}
-        </span>
+        <Badge variant={statusVariant[invite.status] || "default"}>{invite.status}</Badge>
       </div>
 
-      <div className="flex items-center gap-2 border-t border-gray-800 pt-2">
+      <div className="flex items-center gap-3 pt-3 border-t border-white/5">
         {type === "received" ? (
           <>
-            <div className="w-6 h-6 rounded-full bg-purple-800 flex items-center justify-center text-xs font-bold text-purple-200">
-              {invite.sender?.name?.[0]?.toUpperCase()}
+            <Avatar name={invite.sender?.name} size="sm" isAdmin />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-white font-medium">{invite.sender?.name}</span>
+                <Badge variant="admin">👑 Admin</Badge>
+              </div>
+              <p className="text-xs text-gray-500">{invite.sender?.email}</p>
             </div>
-            {/* ✅ Sender = Admin badge */}
-            <span className="text-xs text-gray-400">From: </span>
-            <span className="text-xs text-white">{invite.sender?.name}</span>
-            <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-900 border border-purple-700 text-purple-300 ml-1">
-              👑 Admin
-            </span>
-            <span className="text-xs text-gray-600 ml-auto">{new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
           </>
         ) : (
           <>
-            <div className="w-6 h-6 rounded-full bg-blue-800 flex items-center justify-center text-xs font-bold text-blue-200">
-              {invite.receiver?.name?.[0]?.toUpperCase()}
+            <Avatar name={invite.receiver?.name} size="sm" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-white font-medium">{invite.receiver?.name}</span>
+                <Badge variant="default">Member</Badge>
+              </div>
+              <p className="text-xs text-gray-500">{invite.receiver?.email}</p>
             </div>
-            <span className="text-xs text-gray-400">To: </span>
-            <span className="text-xs text-white">{invite.receiver?.name}</span>
-            {/* ✅ Receiver = Member badge */}
-            <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-400 ml-1">
-              Member
-            </span>
-            <span className="text-xs text-gray-600 ml-auto">{new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
           </>
         )}
+        <span className="text-xs text-gray-600 flex-shrink-0">
+          {new Date(invite.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+        </span>
       </div>
 
       {type === "received" && invite.status === "pending" && (
         <div className="flex gap-2">
-          <button onClick={() => handle(onAccept, "accept")} disabled={!!loading}
-            className="flex-1 text-xs py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50">
-            {loading === "accept" ? "..." : "✓ accept"}
-          </button>
-          <button onClick={() => handle(onReject, "reject")} disabled={!!loading}
-            className="flex-1 text-xs py-1.5 border border-red-800 hover:bg-red-900 text-red-400 rounded-lg transition-colors disabled:opacity-50">
-            {loading === "reject" ? "..." : "✕ reject"}
-          </button>
+          <GradientButton variant="success" size="sm" onClick={() => handle(onAccept, "accept")} disabled={!!loading} className="flex-1">
+            {loading === "accept" ? "..." : "✓ Accept"}
+          </GradientButton>
+          <GradientButton variant="danger" size="sm" onClick={() => handle(onReject, "reject")} disabled={!!loading} className="flex-1">
+            {loading === "reject" ? "..." : "✕ Decline"}
+          </GradientButton>
         </div>
       )}
       {type === "sent" && invite.status === "pending" && (
-        <button onClick={onCancel}
-          className="text-xs py-1.5 border border-gray-700 hover:bg-gray-800 text-gray-400 rounded-lg transition-colors w-full">
-          cancel invite
-        </button>
+        <GradientButton variant="ghost" size="sm" onClick={onCancel} className="w-full">Cancel Invite</GradientButton>
       )}
-    </div>
+    </motion.div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────
 export default function InvitationsPage() {
-  const [received,  setReceived]  = useState([]);
-  const [sent,      setSent]      = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [tab,       setTab]       = useState("received");
+  const [received, setReceived]   = useState([]);
+  const [sent, setSent]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [tab, setTab]             = useState("received");
   const [showModal, setShowModal] = useState(false);
+  const { toasts, addToast, removeToast } = useToast();
 
   const fetchAll = async () => {
     try {
       setLoading(true);
-      const [recRes, sentRes] = await Promise.all([
-        api.get("/invitations"),
-        api.get("/invitations/sent"),
-      ]);
-      setReceived(recRes.data);
-      setSent(sentRes.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+      const [recRes, sentRes] = await Promise.all([api.get("/invitations"), api.get("/invitations/sent")]);
+      setReceived(recRes.data); setSent(sentRes.data);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchAll(); }, []);
 
-  const handleAccept = async (id) => { await api.put(`/invitations/${id}/accept`);  fetchAll(); };
-  const handleReject = async (id) => { await api.put(`/invitations/${id}/reject`);  fetchAll(); };
-  const handleCancel = async (id) => { await api.delete(`/invitations/${id}`);       fetchAll(); };
+  const handleAccept = async (id) => { await api.put(`/invitations/${id}/accept`); addToast("Joined the project!", "success"); fetchAll(); };
+  const handleReject = async (id) => { await api.put(`/invitations/${id}/reject`); addToast("Invitation declined.", "info"); fetchAll(); };
+  const handleCancel = async (id) => { await api.delete(`/invitations/${id}`); addToast("Invitation cancelled.", "info"); fetchAll(); };
 
   const pendingCount = received.filter((i) => i.status === "pending").length;
+  const current = tab === "received" ? received : sent;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 font-mono">
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-white flex items-center gap-2">
-              Team Invites
-              {pendingCount > 0 && (
-                <span className="text-xs px-2 py-0.5 bg-emerald-800 text-emerald-300 rounded-full border border-emerald-700">
-                  {pendingCount} pending
-                </span>
-              )}
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">Manage your team invitations</p>
-          </div>
-          <button onClick={() => setShowModal(true)}
-            className="text-xs px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition-colors">
-            + Send Invite
-          </button>
-        </div>
+    <div className="min-h-screen text-gray-100" style={{ background: "linear-gradient(135deg, #050510 0%, #0a0a1f 50%, #050510 100%)" }}>
+      <div className="fixed inset-0 pointer-events-none opacity-20"
+        style={{ backgroundImage: "linear-gradient(rgba(139,92,246,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
 
-        <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-0.5 w-fit">
-          {[
-            { key: "received", label: `received (${received.length})` },
-            { key: "sent",     label: `sent (${sent.length})` },
-          ].map((t) => (
+      <div className="relative max-w-2xl mx-auto px-4 py-8 space-y-6">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-black text-white flex items-center gap-3">
+              Team Invites {pendingCount > 0 && <Badge variant="purple">{pendingCount} pending</Badge>}
+            </h1>
+            <p className="text-xs text-gray-500 mt-1">Manage your team invitations</p>
+          </div>
+          <GradientButton onClick={() => setShowModal(true)}>+ Send Invite</GradientButton>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+          className="flex p-1 rounded-2xl gap-1"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          {[{ key: "received", label: "Received", count: received.length }, { key: "sent", label: "Sent", count: sent.length }].map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`text-xs px-4 py-1.5 rounded-md transition-colors ${
-                tab === t.key ? "bg-emerald-700 text-white" : "text-gray-400 hover:text-white"
-              }`}>
-              {t.label}
+              className="flex-1 relative px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
+              style={{ color: tab === t.key ? "white" : "#6b7280" }}>
+              {tab === t.key && (
+                <motion.div layoutId="tab-bg" className="absolute inset-0 rounded-xl"
+                  style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.4), rgba(37,99,235,0.4))", border: "1px solid rgba(139,92,246,0.3)" }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+              )}
+              <span className="relative flex items-center justify-center gap-2">
+                {t.label}
+                <span className="px-1.5 py-0.5 rounded-full text-xs" style={{ background: "rgba(255,255,255,0.1)" }}>{t.count}</span>
+              </span>
             </button>
           ))}
-        </div>
+        </motion.div>
 
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="space-y-3">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>
+        ) : current.length === 0 ? (
+          <GlassCard className="p-8">
+            <EmptyState icon={tab === "received" ? "📭" : "📮"}
+              title={tab === "received" ? "No invitations received" : "No invitations sent"}
+              description={tab === "received" ? "When someone invites you, it'll appear here" : "Invite your teammates to collaborate"}
+              action={tab === "sent" && <GradientButton size="sm" onClick={() => setShowModal(true)}>Send First Invite →</GradientButton>}
+            />
+          </GlassCard>
         ) : (
-          <div className="space-y-3">
-            {(tab === "received" ? received : sent).length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-gray-600 text-sm">
-                  {tab === "received" ? "No invitations received yet" : "No invitations sent yet"}
-                </p>
-                {tab === "sent" && (
-                  <button onClick={() => setShowModal(true)} className="mt-2 text-xs text-emerald-400 hover:underline">
-                    Send your first invite →
-                  </button>
-                )}
-              </div>
-            ) : (
-              (tab === "received" ? received : sent).map((invite) => (
-                <InviteCard
-                  key={invite._id}
-                  invite={invite}
-                  type={tab}
+          <motion.div layout className="space-y-3">
+            <AnimatePresence mode="popLayout">
+              {current.map((invite) => (
+                <InviteCard key={invite._id} invite={invite} type={tab}
                   onAccept={() => handleAccept(invite._id)}
                   onReject={() => handleReject(invite._id)}
-                  onCancel={() => handleCancel(invite._id)}
-                />
-              ))
-            )}
-          </div>
+                  onCancel={() => handleCancel(invite._id)} />
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
 
-      {showModal && (
-        <SendInviteModal onClose={() => setShowModal(false)} onSent={fetchAll} />
-      )}
+      <SendInviteModal open={showModal} onClose={() => setShowModal(false)}
+        onSent={() => { fetchAll(); addToast("Invite sent!", "success"); }} />
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }

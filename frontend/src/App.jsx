@@ -24,9 +24,10 @@ function ProtectedRoute({ children }) {
 
 // ── Layout — Navbar + Page ───────────────────────────────────────────
 function WithNavbar({ children }) {
+  const { user, setUser } = useContext(AuthContext);
   return (
     <>
-      <Navbar />
+      <Navbar user={user} onLogout={() => setUser(null)} />
       {children}
     </>
   );

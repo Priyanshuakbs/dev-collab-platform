@@ -4,17 +4,23 @@ export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
 
-  const [user, setUserState] = useState(null);
-
-  // ── App load hote hi localStorage se user lo ──────────────────────
-  useEffect(() => {
+  // ── Synchronous init: read user from localStorage on first render ────
+  // Must be synchronous so ProtectedRoute sees the user immediately on
+  // page refresh — before any useEffect runs — preventing a false logout.
+  const [user, setUserState] = useState(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
-      setUserState(JSON.parse(savedUser));
+      try {
+        return JSON.parse(savedUser);
+      } catch {
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+      }
     }
-  }, []);
+    return null;
+  });
 
-  // ── setUser ke saath localStorage bhi update ho ───────────────────
+  // ── setUser: keeps localStorage in sync with React state ─────────────
   const setUser = (userData) => {
     if (userData) {
       localStorage.setItem("user", JSON.stringify(userData));
@@ -25,6 +31,15 @@ export const AuthProvider = ({ children }) => {
     setUserState(userData);
   };
 
+  // ── Listen for global 401 events dispatched by the Axios interceptor ─
+  // When the API receives a 401 (expired/invalid token), it fires this
+  // event. We catch it here and log the user out cleanly.
+  useEffect(() => {
+    const handleAuthLogout = () => setUser(null);
+    window.addEventListener("auth:logout", handleAuthLogout);
+    return () => window.removeEventListener("auth:logout", handleAuthLogout);
+  }, []);
+
   return (
     <AuthContext.Provider value={{ user, setUser }}>
       {children}
@@ -32,3 +47,4 @@ export const AuthProvider = ({ children }) => {
   );
 
 };
+

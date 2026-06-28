@@ -1,4 +1,7 @@
+// backend/controllers/workspaceController.js
+
 const Workspace = require("../models/Workspace");
+const User      = require("../models/User");
 
 // ── Create Workspace ─────────────────────────────────────────────────
 exports.createWorkspace = async (req, res) => {
@@ -30,7 +33,10 @@ exports.getWorkspaces = async (req, res) => {
         { owner:   req.user._id },
         { members: req.user._id },
       ],
-    }).sort({ createdAt: -1 });
+    })
+      .populate("owner",   "name email avatar")
+      .populate("members", "name email avatar")
+      .sort({ createdAt: -1 });
 
     res.json(workspaces);
   } catch (error) {
@@ -40,6 +46,7 @@ exports.getWorkspaces = async (req, res) => {
 };
 
 // ── Get single workspace by ID ───────────────────────────────────────
+// SECURITY: user must be owner or member.
 exports.getWorkspaceById = async (req, res) => {
   try {
     const workspace = await Workspace.findById(req.params.id)
@@ -50,7 +57,6 @@ exports.getWorkspaceById = async (req, res) => {
       return res.status(404).json({ message: "Workspace not found" });
     }
 
-    // Access check
     const userIdStr = req.user._id.toString();
     const isOwner   = workspace.owner._id.toString() === userIdStr;
     const isMember  = workspace.members.some((m) => m._id.toString() === userIdStr);
@@ -66,22 +72,20 @@ exports.getWorkspaceById = async (req, res) => {
   }
 };
 
-// ── Add member to workspace ──────────────────────────────────────────
+// ── Add member to workspace (owner only) ─────────────────────────────
 exports.addMember = async (req, res) => {
   try {
     const { userId } = req.body;
-    const workspace = await Workspace.findById(req.params.id);
+    const workspace  = await Workspace.findById(req.params.id);
 
     if (!workspace) {
       return res.status(404).json({ message: "Workspace not found" });
     }
 
-    // Only owner can add members
     if (workspace.owner.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Only the workspace owner can add members" });
     }
 
-    // Avoid duplicates
     if (workspace.members.map((m) => m.toString()).includes(userId)) {
       return res.status(400).json({ message: "User is already a member" });
     }
@@ -96,6 +100,40 @@ exports.addMember = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("addMember error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ── Remove member from workspace (owner only) ─────────────────────────
+exports.removeMember = async (req, res) => {
+  try {
+    const workspace = await Workspace.findById(req.params.id);
+
+    if (!workspace) {
+      return res.status(404).json({ message: "Workspace not found" });
+    }
+
+    if (workspace.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Only the workspace owner can remove members" });
+    }
+
+    const { memberId } = req.params;
+    if (memberId === workspace.owner.toString()) {
+      return res.status(400).json({ message: "Cannot remove the workspace owner" });
+    }
+
+    workspace.members = workspace.members.filter(
+      (m) => m.toString() !== memberId
+    );
+    await workspace.save();
+
+    const updated = await Workspace.findById(workspace._id)
+      .populate("owner",   "name email avatar")
+      .populate("members", "name email avatar");
+
+    res.json(updated);
+  } catch (error) {
+    console.error("removeMember error:", error);
     res.status(500).json({ message: error.message });
   }
 };
