@@ -17,6 +17,13 @@ exports.createProject = async (req, res) => {
   try {
     const { title, description, techStack, githubRepo, priority, deadline } = req.body;
 
+    const Workspace = require("../models/Workspace");
+    const workspace = await Workspace.create({
+      name:    title,
+      owner:   req.user._id,
+      members: [req.user._id],
+    });
+
     const project = await Project.create({
       title,
       description,
@@ -26,6 +33,7 @@ exports.createProject = async (req, res) => {
       deadline:      deadline || null,
       owner:         req.user._id,
       collaborators: [req.user._id], // owner auto-joined
+      workspace:     workspace._id,
     });
 
     const populated = await project.populate("owner", "name email avatar");

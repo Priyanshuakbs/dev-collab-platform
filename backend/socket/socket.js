@@ -46,11 +46,29 @@ module.exports = (io) => {
     });
 
     // ─── Chat Message ────────────────────────────────────────────────
-    socket.on("sendMessage", (data) => {
-      io.to(data.workspace).emit("receiveMessage", {
-        ...data,
-        timestamp: data.timestamp || new Date().toISOString(),
-      });
+    socket.on("sendMessage", async (data) => {
+      try {
+        const Message = require("../models/Message");
+        const newMessage = await Message.create({
+          workspace: data.workspace,
+          sender:    data.userId,
+          message:   data.text,
+        });
+        io.to(data.workspace).emit("receiveMessage", {
+          workspace: data.workspace,
+          userId:    data.userId,
+          name:      data.name,
+          text:      data.text,
+          timestamp: newMessage.createdAt || new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Error saving socket message:", err);
+        // Fallback: emit anyway so it shows in UI even if DB fails
+        io.to(data.workspace).emit("receiveMessage", {
+          ...data,
+          timestamp: data.timestamp || new Date().toISOString(),
+        });
+      }
     });
 
     // ─── Live Cursor ─────────────────────────────────────────────────
@@ -122,6 +140,11 @@ module.exports = (io) => {
     socket.on("fs:changed", ({ workspaceId, event, path }) => {
       // Broadcast to other members so their file explorers refresh
       socket.to(workspaceId).emit("fs:changed", { event, path });
+    });
+
+    // ─── Kanban Task Changes ──────────────────────────────────────────
+    socket.on("task:changed", ({ workspaceId }) => {
+      socket.to(workspaceId).emit("task:changed");
     });
 
     // ─── Global online users ──────────────────────────────────────────

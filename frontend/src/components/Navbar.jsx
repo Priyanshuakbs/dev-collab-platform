@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Badge } from "./ui";
+import NotificationBell from "./NotificationBell";
 
 const NAV_LINKS = [
   { path: "/dashboard",   label: "Dashboard",   icon: "⬡" },
@@ -174,23 +175,7 @@ export default function Navbar({ user, onLogout, notifCount = 0 }) {
             </motion.button>
 
             {/* Notifications */}
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="relative w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5a4 4 0 014 4v2.5l1.5 2H1.5L3 8V5.5a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.25"/><path d="M5.5 11.5a1.5 1.5 0 003 0" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/></svg>
-              {notifCount > 0 && (
-                <motion.span
-                  initial={{ scale: 0 }} animate={{ scale: 1 }}
-                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-                  style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}
-                >
-                  {notifCount > 9 ? "9+" : notifCount}
-                </motion.span>
-              )}
-            </motion.button>
+            <NotificationBell />
 
             {/* User Menu */}
             <div className="relative" ref={menuRef}>

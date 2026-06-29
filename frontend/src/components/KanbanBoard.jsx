@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import api from "../services/api";
+import socket from "../socket/socket";
 
 const COLUMNS = [
   { id: "todo",     label: "To Do",      color: "text-gray-400",   border: "border-gray-700",  dot: "bg-gray-500"    },
@@ -194,15 +195,23 @@ export default function KanbanBoard({ workspaceId, members = [] }) {
     }
   };
 
-  useEffect(() => { fetchTasks(); }, [workspaceId]);
+  useEffect(() => {
+    fetchTasks();
+    socket.on("task:changed", fetchTasks);
+    return () => {
+      socket.off("task:changed", fetchTasks);
+    };
+  }, [workspaceId]);
 
   const handleCreate = async (form) => {
     await api.post(`/workspaces/${workspaceId}/tasks`, form);
+    socket.emit("task:changed", { workspaceId });
     fetchTasks();
   };
 
   const handleEdit = async (form) => {
     await api.put(`/workspaces/${workspaceId}/tasks/${editTarget._id}`, form);
+    socket.emit("task:changed", { workspaceId });
     setEditTarget(null);
     fetchTasks();
   };
@@ -211,7 +220,8 @@ export default function KanbanBoard({ workspaceId, members = [] }) {
     setTasks((prev) => prev.map((t) => t._id === taskId ? { ...t, status } : t));
     try {
       await api.patch(`/workspaces/${workspaceId}/tasks/${taskId}/status`, { status });
-    } catch {
+      socket.emit("task:changed", { workspaceId });
+    } catch (err) {
       fetchTasks(); // revert on error
     }
   };
@@ -220,6 +230,7 @@ export default function KanbanBoard({ workspaceId, members = [] }) {
     if (!window.confirm("Delete this task?")) return;
     setTasks((prev) => prev.filter((t) => t._id !== taskId));
     await api.delete(`/workspaces/${workspaceId}/tasks/${taskId}`);
+    socket.emit("task:changed", { workspaceId });
   };
 
   const tasksByStatus = (status) => tasks.filter((t) => t.status === status);

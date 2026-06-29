@@ -97,7 +97,11 @@ exports.createNotification = async ({ recipient, sender, type, message, link, me
       link:  link  || "",
       meta:  meta  || {},
     });
-    return notif;
+    const populated = await notif.populate("sender", "name avatar");
+    if (global.io && global.io.sendNotificationToUser) {
+      global.io.sendNotificationToUser(recipient, populated);
+    }
+    return populated;
   } catch (error) {
     console.error("Notification create error:", error.message);
   }

@@ -141,6 +141,20 @@ exports.acceptInvite = async (req, res) => {
         project.collaborators.push(invite.receiver._id);
         await project.save();
       }
+
+      // Also add to project's workspace members
+      if (project.workspace) {
+        const Workspace = require("../models/Workspace");
+        const workspace = await Workspace.findById(project.workspace);
+        if (workspace) {
+          const wsAlreadyIn = (workspace.members || [])
+            .map((m) => m.toString()).includes(invite.receiver._id.toString());
+          if (!wsAlreadyIn) {
+            workspace.members.push(invite.receiver._id);
+            await workspace.save();
+          }
+        }
+      }
     }
 
     await createNotification({

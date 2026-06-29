@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import socket from "../socket/socket";
+import api from "../services/api";
 
 // ── Socket helpers ────────────────────────────────────────────────────
 const connectSocket = () => {
@@ -48,6 +49,22 @@ export const useCollaboration = (workspaceId, currentUser) => {
     if (!workspaceId || !currentUser) return;
 
     connectSocket();
+
+    // Fetch previous messages
+    api.get(`/messages/${workspaceId}`)
+      .then((res) => {
+        const normalized = (res.data || []).map((msg) => ({
+          workspace: msg.workspace,
+          userId:    msg.sender?._id || msg.sender,
+          name:      msg.sender?.name || "Unknown",
+          text:      msg.message,
+          timestamp: msg.createdAt,
+        }));
+        setMessages(normalized);
+      })
+      .catch((err) => {
+        console.error("Failed to load chat history:", err);
+      });
 
     socket.on("connect", () => {
       setIsConnected(true);

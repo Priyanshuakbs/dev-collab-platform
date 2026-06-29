@@ -56,7 +56,7 @@ exports.getUserById = async (req, res) => {
 
     // User ke projects bhi fetch karo
     const projects = await Project.find({
-      $or: [{ owner: user._id }, { members: user._id }],
+      $or: [{ owner: user._id }, { collaborators: user._id }],
     }).select("_id name description createdAt");
 
     res.json({ ...user.toObject(), projects });
@@ -73,7 +73,7 @@ exports.getMyProfile = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const projects = await Project.find({
-      $or: [{ owner: user._id }, { members: user._id }],
+      $or: [{ owner: user._id }, { collaborators: user._id }],
     }).select("_id name description createdAt");
 
     res.json({ ...user.toObject(), projects });

@@ -275,7 +275,7 @@ export default function Workspace() {
       {/* ── Kanban Tab ── */}
       {activeTab === "kanban" ? (
         <div className="flex-1 overflow-hidden">
-          <KanbanBoard workspaceId={workspaceId} members={members} />
+          <KanbanBoard workspaceId={workspaceId} members={workspace?.members || []} />
         </div>
       ) : (
 

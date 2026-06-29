@@ -38,7 +38,7 @@ export default function ChatBox({ messages, onSend, currentUser }) {
           </p>
         )}
         {messages.map((msg, i) => {
-          const isMe = msg.userId === currentUser?.id;
+          const isMe = msg.userId === currentUser?._id;
           return (
             <div key={i} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
               <span className="text-xs text-gray-500 mb-0.5">{isMe ? "You" : msg.name}</span>

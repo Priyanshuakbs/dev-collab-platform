@@ -40,6 +40,26 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener("auth:logout", handleAuthLogout);
   }, []);
 
+  // ── Global socket connection ─────────────────────────────────────────
+  useEffect(() => {
+    let activeSocket = null;
+    if (user) {
+      import("../socket/socket").then(({ default: socket }) => {
+        activeSocket = socket;
+        if (!socket.connected) {
+          socket.connect();
+        }
+        socket.emit("registerUser", user._id);
+      });
+    } else {
+      import("../socket/socket").then(({ default: socket }) => {
+        if (socket.connected) {
+          socket.disconnect();
+        }
+      });
+    }
+  }, [user]);
+
   return (
     <AuthContext.Provider value={{ user, setUser }}>
       {children}
