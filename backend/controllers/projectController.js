@@ -4,6 +4,7 @@ const Workspace = require("../models/Workspace");
 const User      = require("../models/User");
 const crypto    = require("crypto");
 const { createNotification } = require("./notificationController");
+const sendEmail = require("../utils/email");
 
 // Helper: check if user is a member/owner
 const isMember = (project, userId) => {
@@ -485,7 +486,35 @@ exports.inviteByEmail = async (req, res) => {
       });
     }
 
-    res.json({ message: "Invite sent successfully", pending: project.pendingInvites });
+    let emailSent = false;
+    try {
+      const inviteLink = `${process.env.CLIENT_URL || "http://localhost:5173"}/invite/accept/${token}`;
+      emailSent = await sendEmail({
+        to: email.toLowerCase().trim(),
+        subject: `Invitation to join team "${project.teamName}" on DevCollab`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #7c3aed;">You've been invited!</h2>
+            <p>Hello,</p>
+            <p><strong>${req.user.name}</strong> has invited you to join the team <strong>"${project.teamName}"</strong> for the project <strong>"${project.projectName}"</strong> as a <strong>${workRole}</strong>.</p>
+            <div style="margin: 25px 0;">
+              <a href="${inviteLink}" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Accept Invitation</a>
+            </div>
+            <p style="font-size: 12px; color: #777;">If the button doesn't work, you can copy and paste the following URL into your browser:</p>
+            <p style="font-size: 12px; color: #777; word-break: break-all;">${inviteLink}</p>
+          </div>
+        `,
+      });
+    } catch (mailErr) {
+      console.error("Mail dispatch failed:", mailErr.message);
+    }
+
+    res.json({
+      message: emailSent
+        ? "Invite sent successfully via email!"
+        : "Invite saved! (Email service not configured in .env, please share the invite link manually)",
+      pending: project.pendingInvites,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
