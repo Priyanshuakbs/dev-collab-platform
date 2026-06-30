@@ -116,8 +116,60 @@ exports.updateTaskStatus = async (req, res) => {
     if (!(await hasAccess(task.workspace, req.user.id)))
       return res.status(403).json({ message: "Access denied" });
 
+    const oldStatus = task.status;
     task.status = status;
     await task.save();
+
+    // Trigger notification if task is marked done/completed
+    if (status === "done" && oldStatus !== "done") {
+      try {
+        const { createNotification } = require("./notificationController");
+        const workspace = await Workspace.findById(task.workspace);
+        
+        const creatorId = (task.createdBy?._id || task.createdBy)?.toString();
+        const assigneeId = (task.assignedTo?._id || task.assignedTo)?.toString();
+        const ownerId = (workspace?.owner?._id || workspace?.owner)?.toString();
+        const currentUserId = req.user._id.toString();
+
+        // Notify workspace owner (if not the one who completed it)
+        if (ownerId && ownerId !== currentUserId) {
+          await createNotification({
+            recipient: ownerId,
+            sender: req.user._id,
+            type: "task_completed",
+            message: `Task "${task.title}" was completed by ${req.user.name}`,
+            link: `/workspace/${task.workspace}`,
+            meta: { taskId: task._id, workspaceId: task.workspace }
+          });
+        }
+        
+        // Notify the task creator (if not the owner and not the one who completed it)
+        if (creatorId && creatorId !== currentUserId && creatorId !== ownerId) {
+          await createNotification({
+            recipient: creatorId,
+            sender: req.user._id,
+            type: "task_completed",
+            message: `Task "${task.title}" was completed by ${req.user.name}`,
+            link: `/workspace/${task.workspace}`,
+            meta: { taskId: task._id, workspaceId: task.workspace }
+          });
+        }
+
+        // Notify the assigned user (if not the creator/owner and not the one who completed it)
+        if (assigneeId && assigneeId !== currentUserId && assigneeId !== ownerId && assigneeId !== creatorId) {
+          await createNotification({
+            recipient: assigneeId,
+            sender: req.user._id,
+            type: "task_completed",
+            message: `Task "${task.title}" was completed by ${req.user.name}`,
+            link: `/workspace/${task.workspace}`,
+            meta: { taskId: task._id, workspaceId: task.workspace }
+          });
+        }
+      } catch (err) {
+        console.error("Task completion notification error:", err);
+      }
+    }
 
     res.json(task);
   } catch (error) {

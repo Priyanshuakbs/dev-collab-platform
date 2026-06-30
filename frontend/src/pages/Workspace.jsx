@@ -1,6 +1,6 @@
 // frontend/src/pages/Workspace.jsx
 import { useState, useContext, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { AuthContext }      from "../context/AuthContext";
 import { useCollaboration } from "../hooks/useCollaboration";
@@ -123,7 +123,12 @@ export default function Workspace() {
 
   // ── States ───────────────────────────────────────────────────────
   const [project,        setProject]        = useState(null);
-  const [activeTab,      setActiveTab]      = useState("overview"); // overview, team, invite, members, tasks, chat, files, settings
+  const [searchParams]                      = useSearchParams();
+  const [activeTab,      setActiveTab]      = useState(searchParams.get("tab") || "overview"); // overview, team, invite, members, tasks, chat, files, settings
+  useEffect(() => {
+    const tab = searchParams.get("tab") || "overview";
+    setActiveTab(tab);
+  }, [searchParams]);
   const [openFiles,      setOpenFiles]      = useState([]);
   const [activeFilePath, setActiveFilePath] = useState(null);
   const [saving,         setSaving]         = useState(false);
@@ -181,6 +186,34 @@ export default function Workspace() {
       setEditProjDeadline(res.data.deadline ? res.data.deadline.slice(0,10) : "");
     } catch (err) {
       console.error("fetchProjectDetails error:", err);
+      // Fallback: Fetch workspace details directly if no project is associated
+      try {
+        const wsRes = await api.get(`/workspaces/${workspaceId}`);
+        const wsData = wsRes.data;
+        const ownerId = wsData.owner?._id || wsData.owner;
+        const fallbackProject = {
+          _id: wsData._id,
+          projectName: wsData.name,
+          teamName: wsData.name,
+          description: "Workspace default sandbox.",
+          priority: "medium",
+          status: "active",
+          owner: wsData.owner,
+          members: wsData.members?.map(m => ({
+            user: m,
+            role: (m?._id || m)?.toString() === ownerId?.toString() ? "owner" : "member",
+            workRole: "Developer"
+          })) || []
+        };
+        setProject(fallbackProject);
+        setEditTeamName(fallbackProject.teamName);
+        setEditTeamDesc(fallbackProject.description);
+        setEditProjName(fallbackProject.projectName);
+        setEditProjPrio(fallbackProject.priority);
+        setEditProjStatus(fallbackProject.status);
+      } catch (wsErr) {
+        console.error("Workspace fallback details fetch failed:", wsErr);
+      }
     }
   }, [workspaceId]);
 
@@ -455,58 +488,8 @@ export default function Workspace() {
   ];
 
   return (
-    <div className="flex overflow-hidden transition-all duration-200 bg-gray-950 text-gray-100"
-      style={{ height: "100vh", paddingTop: "var(--navbar-height, 56px)" }}>
-
-      {/* ── Left Sidebar Navigation (Unified Project Panel) ── */}
-      <div className="w-56 flex-shrink-0 flex flex-col border-r bg-gray-900 border-gray-800"
-        style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
-        
-        {/* Project Profile Header */}
-        <div className="p-4 border-b border-gray-800 flex items-center gap-3">
-          {project?.teamLogo ? (
-            <img src={project.teamLogo} alt="Logo" className="w-8 h-8 rounded-lg object-cover border border-gray-800" />
-          ) : (
-            <div className="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center font-bold text-white text-xs border border-indigo-700">
-              {project?.projectName?.[0]?.toUpperCase() || "P"}
-            </div>
-          )}
-          <div className="min-w-0">
-            <h2 className="text-xs font-bold text-white truncate leading-snug">{project?.projectName}</h2>
-            <p className="text-[10px] text-purple-400 truncate mt-0.5">{project?.teamName}</p>
-          </div>
-        </div>
-
-        {/* Vertical Links */}
-        <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {sidebarLinks.map(({ key, label, icon }) => {
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all hover:bg-white/5"
-                style={{
-                  background: isActive ? "rgba(124, 58, 237, 0.15)" : "transparent",
-                  color:      isActive ? "#c4b5fd" : "#969696",
-                  borderLeft: isActive ? "3px solid #7c3aed" : "3px solid transparent",
-                }}
-              >
-                <span>{icon}</span>
-                <span>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* User Role Info */}
-        <div className="p-3.5 border-t border-gray-800 bg-gray-950/40 flex items-center justify-between">
-          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Role</span>
-          <span className="text-[9px] px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-800 text-purple-300 font-bold">
-            {myMemberEntry?.role?.toUpperCase() || "MEMBER"}
-          </span>
-        </div>
-      </div>
+    <div className="page-container flex overflow-hidden bg-gray-950 text-gray-100"
+      style={{ height: "100vh" }}>
 
       {/* ── Main Panel Content ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-950">

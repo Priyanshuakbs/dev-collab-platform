@@ -15,6 +15,13 @@ export default function AcceptInvite() {
       return;
     }
 
+    const authToken = localStorage.getItem("token");
+    if (!authToken) {
+      setError("Please sign in first to accept this invitation.");
+      setLoading(false);
+      return;
+    }
+
     api.post(`/projects/invites/accept/${token}`)
       .then((res) => {
         // Successfully accepted! Navigate to the workspace

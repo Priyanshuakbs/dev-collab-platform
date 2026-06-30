@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import socket from "../socket/socket";
 import { AuthContext } from "../context/AuthContext";
+import { ToastContainer, useToast } from "./ui";
 
 const TYPE_ICON = {
   invitation_received: "📩",
@@ -22,6 +23,7 @@ export default function NotificationBell() {
   const { user } = useContext(AuthContext);
   const navigate  = useNavigate();
   const dropRef   = useRef();
+  const { toasts, addToast, removeToast } = useToast();
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
@@ -51,6 +53,7 @@ export default function NotificationBell() {
     socket.on("newNotification", (notif) => {
       setNotifications((prev) => [notif, ...prev]);
       setUnreadCount((prev) => prev + 1);
+      addToast(notif.message || "You received a new notification", "info");
     });
     return () => socket.off("newNotification");
   }, []);
@@ -100,7 +103,8 @@ export default function NotificationBell() {
   };
 
   return (
-    <div className="relative" ref={dropRef}>
+    <>
+      <div className="relative" ref={dropRef}>
 
       {/* Bell Button */}
       <button
@@ -204,6 +208,8 @@ export default function NotificationBell() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </>
   );
 }

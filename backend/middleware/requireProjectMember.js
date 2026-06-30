@@ -25,7 +25,7 @@ const requireProjectMember = async (req, res, next) => {
     const userId      = req.user._id.toString();
     const isOwner     = project.owner.toString() === userId;
     const isMember    = (project.members || [])
-      .some((m) => m.user && m.user.toString() === userId);
+      .some((m) => m.user && (m.user._id || m.user).toString() === userId);
 
     if (!isOwner && !isMember) {
       return res.status(403).json({
@@ -37,7 +37,7 @@ const requireProjectMember = async (req, res, next) => {
     let userRole = "member";
     if (isOwner) userRole = "owner";
     else {
-      const match = project.members.find((m) => m.user && m.user.toString() === userId);
+      const match = project.members.find((m) => m.user && (m.user._id || m.user).toString() === userId);
       if (match) userRole = match.role;
     }
 

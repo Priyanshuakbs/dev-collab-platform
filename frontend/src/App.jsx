@@ -11,6 +11,7 @@ import ProfilePage     from "./pages/ProfilePage";
 import Workspace       from "./pages/Workspace";
 import ProjectPage     from "./pages/ProjectPage";
 import AcceptInvite from "./pages/AcceptInvite";
+import InvitationsPage  from "./pages/InvitationsPage";
 
 // ── Components ───────────────────────────────────────────────────────
 import Navbar from "./components/Navbar";
@@ -27,7 +28,7 @@ function WithNavbar({ children }) {
   const { user, setUser } = useContext(AuthContext);
   return (
     <>
-      <Navbar user={user} onLogout={() => setUser(null)} />
+      <Navbar user={user} onLogout={() => setUser(null)} variant="protected" />
       {children}
     </>
   );
@@ -53,6 +54,12 @@ function App() {
         <Route path="/projects" element={
           <ProtectedRoute>
             <WithNavbar><ProjectPage /></WithNavbar>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/invitations" element={
+          <ProtectedRoute>
+            <WithNavbar><InvitationsPage /></WithNavbar>
           </ProtectedRoute>
         } />
 

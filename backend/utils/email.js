@@ -2,25 +2,32 @@
 const nodemailer = require("nodemailer");
 
 const sendEmail = async ({ to, subject, html }) => {
-  const host = process.env.EMAIL_HOST;
-  const port = process.env.EMAIL_PORT || 587;
   const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
+  const pass = process.env.EMAIL_PASS || process.env.EMAIL_APP_PASSWORD;
+  const service = process.env.EMAIL_SERVICE;
+  const host = process.env.EMAIL_HOST;
+  const port = Number.parseInt(process.env.EMAIL_PORT || "587", 10);
 
-  if (!host || !user || !pass) {
-    console.warn("⚠️ Nodemailer Warning: EMAIL_HOST, EMAIL_USER, or EMAIL_PASS are not configured in .env. Email was not sent.");
+  if (!user || !pass) {
+    console.warn("⚠️ Nodemailer Warning: EMAIL_USER and EMAIL_PASS/EMAIL_APP_PASSWORD are required.");
     return false;
   }
 
-  const transporter = nodemailer.createTransport({
-    host,
-    port: parseInt(port),
-    secure: parseInt(port) === 465, // true for 465, false for 587
-    auth: {
-      user,
-      pass,
-    },
-  });
+  const transporterConfig = {
+    auth: { user, pass },
+  };
+
+  if (service) {
+    transporterConfig.service = service;
+  } else if (host) {
+    transporterConfig.host = host;
+    transporterConfig.port = port;
+    transporterConfig.secure = port === 465;
+  } else {
+    transporterConfig.service = "gmail";
+  }
+
+  const transporter = nodemailer.createTransport(transporterConfig);
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || `"DevCollab Platform" <${user}>`,

@@ -239,7 +239,7 @@ export default function InvitationsPage() {
       <div className="fixed inset-0 pointer-events-none opacity-20"
         style={{ backgroundImage: "linear-gradient(rgba(139,92,246,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
 
-      <div className="relative max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <div className="relative max-w-4xl mx-auto px-4 py-8 space-y-6">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
           className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -272,7 +272,7 @@ export default function InvitationsPage() {
         </motion.div>
 
         {loading ? (
-          <div className="space-y-3">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-44" />)}</div>
         ) : current.length === 0 ? (
           <GlassCard className="p-8">
             <EmptyState icon={tab === "received" ? "📭" : "📮"}
@@ -282,7 +282,7 @@ export default function InvitationsPage() {
             />
           </GlassCard>
         ) : (
-          <motion.div layout className="space-y-3">
+          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <AnimatePresence mode="popLayout">
               {current.map((invite) => (
                 <InviteCard key={invite._id} invite={invite} type={tab}

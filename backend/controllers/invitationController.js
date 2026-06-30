@@ -45,8 +45,8 @@ exports.sendInvite = async (req, res) => {
       return res.status(400).json({ message: "You cannot invite yourself" });
 
     // Already a member?
-    const alreadyMember = (project.collaborators || [])
-      .map((c) => c.toString()).includes(receiverId);
+    const alreadyMember = (project.members || [])
+      .some((m) => m.user && (m.user._id || m.user).toString() === receiverId);
     if (alreadyMember)
       return res.status(400).json({ message: "This user is already a member" });
 
@@ -66,7 +66,7 @@ exports.sendInvite = async (req, res) => {
     const populated = await invite.populate([
       { path: "sender",   select: "name email avatar" },
       { path: "receiver", select: "name email avatar" },
-      { path: "project",  select: "title description" },
+      { path: "project",  select: "projectName title description" },
     ]);
 
     await createNotification({
@@ -90,7 +90,7 @@ exports.getInvitations = async (req, res) => {
   try {
     const invites = await Invitation.find({ receiver: req.user._id })
       .populate("sender",  "name email avatar")
-      .populate("project", "title description techStack")
+      .populate("project", "projectName title description techStack")
       .sort({ createdAt: -1 });
     res.json(invites);
   } catch (error) {
@@ -104,7 +104,7 @@ exports.getSentInvitations = async (req, res) => {
   try {
     const invites = await Invitation.find({ sender: req.user._id })
       .populate("receiver", "name email avatar")
-      .populate("project",  "title")
+      .populate("project",  "projectName title")
       .sort({ createdAt: -1 });
     res.json(invites);
   } catch (error) {
@@ -132,13 +132,17 @@ exports.acceptInvite = async (req, res) => {
     invite.status = "accepted";
     await invite.save();
 
-    // Add user to project collaborators
+    // Add user to project members
     const project = await Project.findById(invite.project._id);
     if (project) {
-      const alreadyIn = (project.collaborators || [])
-        .map((c) => c.toString()).includes(invite.receiver._id.toString());
+      const alreadyIn = (project.members || [])
+        .some((m) => m.user && (m.user._id || m.user).toString() === invite.receiver._id.toString());
       if (!alreadyIn) {
-        project.collaborators.push(invite.receiver._id);
+        project.members.push({
+          user: invite.receiver._id,
+          role: "member",
+          workRole: "Frontend Developer",
+        });
         await project.save();
       }
 

@@ -294,8 +294,15 @@ code, pre, .mono {
 /* ── Page Layout ─────────────────────────────────────────────────── */
 .page-container {
   min-height: 100vh;
-  padding-top: 64px; /* navbar height */
+  padding-top: 56px; /* mobile topbar height */
   background: var(--bg-base);
+}
+
+@media (min-width: 768px) {
+  .page-container {
+    padding-top: 0;
+    padding-left: 240px; /* sidebar width */
+  }
 }
 
 .content-container {

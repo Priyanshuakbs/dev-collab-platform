@@ -140,7 +140,23 @@ const projectSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+projectSchema.virtual("title").get(function () {
+  return this.projectName;
+}).set(function (val) {
+  this.projectName = val;
+});
+
+projectSchema.virtual("name").get(function () {
+  return this.projectName;
+}).set(function (val) {
+  this.projectName = val;
+});
 
 module.exports = mongoose.model("Project", projectSchema);

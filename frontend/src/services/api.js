@@ -20,11 +20,19 @@ API.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Dispatch a custom event — AuthContext will listen and log out
-      window.dispatchEvent(new CustomEvent("auth:logout"));
+      const requestUrl = error.config?.url || "";
+      const isInviteAccept =
+        requestUrl.includes("/projects/invites/accept/") ||
+        requestUrl.includes("/invite/accept/");
+
+      // Invite accept should not force a global logout when the user is
+      // simply opening a mail link without an active session.
+      if (!isInviteAccept) {
+        window.dispatchEvent(new CustomEvent("auth:logout"));
+      }
     }
     return Promise.reject(error);
   }
 );
 
-export default API;
+export default API;

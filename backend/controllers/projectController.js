@@ -450,7 +450,7 @@ exports.inviteByEmail = async (req, res) => {
     const foundUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (foundUser) {
       const alreadyIn = project.members.some(
-        (m) => m.user && m.user.toString() === foundUser._id.toString()
+        (m) => m.user && (m.user._id || m.user).toString() === foundUser._id.toString()
       );
       if (alreadyIn) return res.status(400).json({ message: "User is already a member" });
     }
@@ -568,7 +568,7 @@ exports.acceptInviteToken = async (req, res) => {
     // Already a member?
     const userIdStr = req.user._id.toString();
     const alreadyIn = project.members.some(
-      (m) => m.user && m.user.toString() === userIdStr
+      (m) => m.user && (m.user._id || m.user).toString() === userIdStr
     );
     if (alreadyIn) {
       return res.status(400).json({ message: "You are already a member of this project" });

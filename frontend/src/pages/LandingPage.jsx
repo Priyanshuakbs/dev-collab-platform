@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import Navbar from "../components/Navbar";
 
 const FEATURES = [
   {
@@ -65,24 +66,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-mono overflow-x-hidden">
 
-      {/* ── Navbar ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950 bg-opacity-80 backdrop-blur border-b border-gray-800 px-6 py-3">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-emerald-500 rounded-lg flex items-center justify-center text-gray-950 font-bold text-sm">D</div>
-            <span className="text-white font-bold text-sm">dev<span className="text-emerald-400">collab</span></span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link to="/login" className="text-xs text-gray-400 hover:text-white transition-colors px-3 py-1.5">
-              Sign In
-            </Link>
-            <Link to="/register"
-              className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg transition-colors">
-              Get Started →
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <Navbar variant="public" />
 
       {/* ── Hero ── */}
       <section className="relative min-h-screen flex items-center justify-center px-6 pt-20">
