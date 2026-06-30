@@ -329,12 +329,12 @@ export default function Workspace() {
     if (!inviteEmail.trim()) return;
     setInviteError(""); setInviteSuccess("");
     try {
-      await api.post(`/projects/${project?._id}/invites/email`, {
+      const res = await api.post(`/projects/${project?._id}/invites/email`, {
         email: inviteEmail,
         role: inviteRole,
         workRole: inviteWorkRole,
       });
-      setInviteSuccess(`Invite sent to ${inviteEmail}!`);
+      setInviteSuccess(res.data.message || `Invite sent to ${inviteEmail}!`);
       setInviteEmail("");
       fetchProjectDetails();
     } catch (err) {
@@ -443,346 +443,386 @@ export default function Workspace() {
            email.toLowerCase().includes(memberSearch.toLowerCase());
   });
 
+  const sidebarLinks = [
+    { key: "overview", label: "Overview", icon: "⬡" },
+    { key: "team",     label: "Team details", icon: "👥" },
+    { key: "invite",   label: "Invite Members", icon: "✉" },
+    { key: "members",  label: "Members List", icon: "👤" },
+    { key: "tasks",    label: "Task Board", icon: "📋" },
+    { key: "chat",     label: "Chat Room", icon: "💬" },
+    { key: "files",    label: "Files & Editor", icon: "💻" },
+    { key: "settings", label: "Settings", icon: "⚙" },
+  ];
+
   return (
-    <div className="flex flex-col overflow-hidden transition-all duration-200 bg-gray-950 text-gray-100"
-      style={{ height: "100vh", paddingTop: "var(--navbar-height, 56px)", fontFamily: "Consolas, 'JetBrains Mono', monospace" }}>
+    <div className="flex overflow-hidden transition-all duration-200 bg-gray-950 text-gray-100"
+      style={{ height: "100vh", paddingTop: "var(--navbar-height, 56px)" }}>
 
-      {/* ── Sub Navbar / Tab bar ── */}
-      <div className="flex items-center gap-1 px-4 flex-shrink-0 overflow-x-auto"
-        style={{ background: "#252526", borderBottom: "1px solid #1e1e1e", height: 42 }}>
-        {[
-          ["overview", "⬡ Overview"],
-          ["team", "👥 Team details"],
-          ["invite", "✉ Invite Members"],
-          ["members", "👤 Members List"],
-          ["tasks", "📋 Task Board"],
-          ["chat", "💬 Chat Room"],
-          ["files", "💻 Files & Editor"],
-          ["settings", "⚙ Settings"],
-        ].map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
-            className="text-xs px-3.5 py-2.5 font-bold transition-all whitespace-nowrap flex-shrink-0"
-            style={{
-              background: activeTab === key ? "#1e1e1e" : "transparent",
-              color:      activeTab === key ? "#ffffff" : "#969696",
-              borderTop: activeTab === key ? "2px solid #7c3aed" : "2px solid transparent",
-            }}>
-            {label}
-          </button>
-        ))}
-
-        <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-          {activeTab === "files" && activeFile && canRun(activeFile.language) && (
-            <>
-              {runError && <span className="text-xs text-red-400">{runError}</span>}
-              <button onClick={handleRunCode} disabled={isRunning}
-                className="text-xs px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 font-bold transition-colors disabled:opacity-50">
-                {isRunning ? "Running…" : "▶ Run"}
-              </button>
-            </>
+      {/* ── Left Sidebar Navigation (Unified Project Panel) ── */}
+      <div className="w-56 flex-shrink-0 flex flex-col border-r bg-gray-900 border-gray-800"
+        style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+        
+        {/* Project Profile Header */}
+        <div className="p-4 border-b border-gray-800 flex items-center gap-3">
+          {project?.teamLogo ? (
+            <img src={project.teamLogo} alt="Logo" className="w-8 h-8 rounded-lg object-cover border border-gray-800" />
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center font-bold text-white text-xs border border-indigo-700">
+              {project?.projectName?.[0]?.toUpperCase() || "P"}
+            </div>
           )}
-          {saving && <span className="text-xs animate-pulse text-gray-500">Saving…</span>}
-          <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-950/50 border border-purple-800 text-purple-300">
+          <div className="min-w-0">
+            <h2 className="text-xs font-bold text-white truncate leading-snug">{project?.projectName}</h2>
+            <p className="text-[10px] text-purple-400 truncate mt-0.5">{project?.teamName}</p>
+          </div>
+        </div>
+
+        {/* Vertical Links */}
+        <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {sidebarLinks.map(({ key, label, icon }) => {
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all hover:bg-white/5"
+                style={{
+                  background: isActive ? "rgba(124, 58, 237, 0.15)" : "transparent",
+                  color:      isActive ? "#c4b5fd" : "#969696",
+                  borderLeft: isActive ? "3px solid #7c3aed" : "3px solid transparent",
+                }}
+              >
+                <span>{icon}</span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* User Role Info */}
+        <div className="p-3.5 border-t border-gray-800 bg-gray-950/40 flex items-center justify-between">
+          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Role</span>
+          <span className="text-[9px] px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-800 text-purple-300 font-bold">
             {myMemberEntry?.role?.toUpperCase() || "MEMBER"}
           </span>
         </div>
       </div>
 
-      {/* ── Render Tabs Content ── */}
-      <div className="flex-1 overflow-hidden">
-        {activeTab === "overview" && (
-          <div className="p-6 overflow-y-auto h-full max-w-4xl mx-auto space-y-6">
-            <div className="card p-6 flex flex-col sm:flex-row justify-between items-start gap-4">
-              <div>
-                <h1 className="text-xl font-bold text-white mb-2">{project?.projectName}</h1>
-                <p className="text-xs text-gray-500 max-w-xl">{project?.description || "No description provided."}</p>
-              </div>
-              <div className="flex gap-2">
-                <span className={PRIORITY_CLASS[project?.priority] || "badge"}>{project?.priority}</span>
-                <span className={STATUS_CLASS[project?.status] || "badge"}>{project?.status}</span>
-              </div>
+      {/* ── Main Panel Content ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-950">
+        
+        {/* Render editor tabs header ONLY when files tab is active */}
+        {activeTab === "files" && (
+          <div className="flex items-center justify-between flex-shrink-0 bg-gray-900 border-b border-gray-800 pr-4" style={{ height: 35 }}>
+            <EditorTabs openFiles={openFiles} activeFilePath={activeFilePath} onSelect={setActiveFilePath} onClose={closeFile} />
+            <div className="flex items-center gap-2">
+              {activeFile && canRun(activeFile.language) && (
+                <>
+                  {runError && <span className="text-[10px] text-red-400">{runError}</span>}
+                  <button onClick={handleRunCode} disabled={isRunning}
+                    className="text-[10px] px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 font-bold transition-colors disabled:opacity-50">
+                    {isRunning ? "Running…" : "▶ Run"}
+                  </button>
+                </>
+              )}
+              {saving && <span className="text-[10px] animate-pulse text-gray-500">Saving…</span>}
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="card p-5 text-center">
-                <p className="text-2xl font-bold text-purple-400">{project?.members?.length || 0}</p>
-                <p className="text-xs text-gray-500 mt-1 font-semibold">Team Members</p>
-              </div>
-              <div className="card p-5 text-center">
-                <p className="text-2xl font-bold text-emerald-400">{project?.teamName || "Unnamed"}</p>
-                <p className="text-xs text-gray-500 mt-1 font-semibold">Team Name</p>
-              </div>
-              <div className="card p-5 text-center">
-                <p className="text-2xl font-bold text-yellow-400">
-                  {project?.deadline ? new Date(project.deadline).toLocaleDateString() : "No Limit"}
-                </p>
-                <p className="text-xs text-gray-500 mt-1 font-semibold">Project Deadline</p>
-              </div>
-            </div>
-
-            {project?.teamLogo && (
-              <div className="card p-6 flex items-center gap-4">
-                <img src={project.teamLogo} alt="Team Logo" className="w-16 h-16 rounded-2xl object-cover border border-gray-800" />
-                <div>
-                  <h3 className="text-sm font-bold text-white">Project Team</h3>
-                  <p className="text-xs text-gray-500 mt-1">{project.teamName}</p>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {activeTab === "team" && (
-          <div className="p-6 overflow-y-auto h-full max-w-md mx-auto space-y-6">
-            <h2 className="text-md font-bold text-white">👥 Team Details Settings</h2>
-            {teamError && <p className="text-xs text-red-400 bg-red-950/20 border border-red-900 rounded-lg p-2">{teamError}</p>}
-            {teamSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{teamSuccess}</p>}
+        {/* Active Tab View */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === "overview" && (
+            <div className="p-6 overflow-y-auto h-full max-w-4xl mx-auto space-y-6">
+              <div className="card p-6 flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div>
+                  <h1 className="text-xl font-bold text-white mb-2">{project?.projectName}</h1>
+                  <p className="text-xs text-gray-500 max-w-xl">{project?.description || "No description provided."}</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className={PRIORITY_CLASS[project?.priority] || "badge"}>{project?.priority}</span>
+                  <span className={STATUS_CLASS[project?.status] || "badge"}>{project?.status}</span>
+                </div>
+              </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Team Name *</label>
-                <input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="card p-5 text-center">
+                  <p className="text-2xl font-bold text-purple-400">{project?.members?.length || 0}</p>
+                  <p className="text-xs text-gray-500 mt-1 font-semibold">Team Members</p>
+                </div>
+                <div className="card p-5 text-center">
+                  <p className="text-2xl font-bold text-emerald-400">{project?.teamName || "Unnamed"}</p>
+                  <p className="text-xs text-gray-500 mt-1 font-semibold">Team Name</p>
+                </div>
+                <div className="card p-5 text-center">
+                  <p className="text-2xl font-bold text-yellow-400">
+                    {project?.deadline ? new Date(project.deadline).toLocaleDateString() : "No Limit"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1 font-semibold">Project Deadline</p>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Team Description</label>
-                <textarea rows={3} value={editTeamDesc} onChange={e => setEditTeamDesc(e.target.value)} disabled={!hasManagementAccess} className="input-base resize-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Team Logo</label>
+
+              {project?.teamLogo && (
+                <div className="card p-6 flex items-center gap-4">
+                  <img src={project.teamLogo} alt="Team Logo" className="w-16 h-16 rounded-2xl object-cover border border-gray-800" />
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Project Team</h3>
+                    <p className="text-xs text-gray-500 mt-1">{project.teamName}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "team" && (
+            <div className="p-6 overflow-y-auto h-full max-w-md mx-auto space-y-6">
+              <h2 className="text-md font-bold text-white">👥 Team Details Settings</h2>
+              {teamError && <p className="text-xs text-red-400 bg-red-950/20 border border-red-900 rounded-lg p-2">{teamError}</p>}
+              {teamSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{teamSuccess}</p>}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Team Name *</label>
+                  <input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Team Description</label>
+                  <textarea rows={3} value={editTeamDesc} onChange={e => setEditTeamDesc(e.target.value)} disabled={!hasManagementAccess} className="input-base resize-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Team Logo</label>
+                  {hasManagementAccess && (
+                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="input-base text-xs mb-3" />
+                  )}
+                  {editTeamLogo && (
+                    <img src={editTeamLogo} alt="Logo" className="w-20 h-20 rounded-2xl object-cover border border-gray-800" />
+                  )}
+                </div>
+
                 {hasManagementAccess && (
-                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="input-base text-xs mb-3" />
+                  <button onClick={handleSaveTeamDetails} className="btn-primary text-xs w-full py-2.5">
+                    Save Team Details
+                  </button>
                 )}
-                {editTeamLogo && (
-                  <img src={editTeamLogo} alt="Logo" className="w-20 h-20 rounded-2xl object-cover border border-gray-800" />
-                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "invite" && (
+            <div className="p-6 overflow-y-auto h-full max-w-lg mx-auto space-y-6">
+              <h2 className="text-md font-bold text-white">✉ Invite Team Members</h2>
+              {inviteError && <p className="text-xs text-red-400 bg-red-950/20 border border-red-900 rounded-lg p-2">{inviteError}</p>}
+              {inviteSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{inviteSuccess}</p>}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Permission Role</label>
+                  <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} disabled={!hasManagementAccess} className="input-base">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Work Role</label>
+                  <select value={inviteWorkRole} onChange={e => setInviteWorkRole(e.target.value)} disabled={!hasManagementAccess} className="input-base">
+                    {WORK_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
               </div>
 
               {hasManagementAccess && (
-                <button onClick={handleSaveTeamDetails} className="btn-primary text-xs w-full py-2.5">
-                  Save Team Details
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === "invite" && (
-          <div className="p-6 overflow-y-auto h-full max-w-lg mx-auto space-y-6">
-            <h2 className="text-md font-bold text-white">✉ Invite Team Members</h2>
-            {inviteError && <p className="text-xs text-red-400 bg-red-950/20 border border-red-900 rounded-lg p-2">{inviteError}</p>}
-            {inviteSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{inviteSuccess}</p>}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Permission Role</label>
-                <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} disabled={!hasManagementAccess} className="input-base">
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Work Role</label>
-                <select value={inviteWorkRole} onChange={e => setInviteWorkRole(e.target.value)} disabled={!hasManagementAccess} className="input-base">
-                  {WORK_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {hasManagementAccess && (
-              <>
-                <div className="border-t border-gray-800 pt-4 space-y-3">
-                  <label className="text-xs font-semibold text-gray-400 block">Invite by Email</label>
-                  <div className="flex gap-2">
-                    <input type="email" placeholder="collaborator@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="input-base flex-1" />
-                    <button onClick={handleEmailInvite} className="btn-primary text-xs whitespace-nowrap px-4">
-                      Send
-                    </button>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-800 pt-4 space-y-3">
-                  <label className="text-xs font-semibold text-gray-400 block">Generate Link</label>
-                  {inviteLink ? (
+                <>
+                  <div className="border-t border-gray-800 pt-4 space-y-3">
+                    <label className="text-xs font-semibold text-gray-400 block">Invite by Email</label>
                     <div className="flex gap-2">
-                      <input type="text" readOnly value={inviteLink} className="input-base flex-1 text-xs select-all bg-gray-950" />
-                      <button onClick={handleCopyLink} className="btn-ghost text-xs whitespace-nowrap px-4">
-                        {copied ? "Copied!" : "Copy"}
+                      <input type="email" placeholder="collaborator@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="input-base flex-1" />
+                      <button onClick={handleEmailInvite} className="btn-primary text-xs whitespace-nowrap px-4">
+                        Send
                       </button>
                     </div>
+                  </div>
+
+                  <div className="border-t border-gray-800 pt-4 space-y-3">
+                    <label className="text-xs font-semibold text-gray-400 block">Generate Link</label>
+                    {inviteLink ? (
+                      <div className="flex gap-2">
+                        <input type="text" readOnly value={inviteLink} className="input-base flex-1 text-xs select-all bg-gray-950" />
+                        <button onClick={handleCopyLink} className="btn-ghost text-xs whitespace-nowrap px-4">
+                          {copied ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={handleGenerateLink} className="btn-ghost text-xs w-full py-2">
+                        Generate Invite Link
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Pending Invites list */}
+              <div className="border-t border-gray-800 pt-4 space-y-3">
+                <label className="text-xs font-semibold text-gray-400 block">Pending Invitations ({project?.pendingInvites?.length || 0})</label>
+                <div className="space-y-2">
+                  {project?.pendingInvites?.length === 0 ? (
+                    <p className="text-xs text-gray-600">No pending invites.</p>
                   ) : (
-                    <button onClick={handleGenerateLink} className="btn-ghost text-xs w-full py-2">
-                      Generate Invite Link
+                    project?.pendingInvites?.map(inv => (
+                      <div key={inv._id} className="flex justify-between items-center bg-gray-900 border border-gray-800 rounded-xl p-3">
+                        <div>
+                          <p className="text-xs text-white font-bold">{inv.email}</p>
+                          <p className="text-[10px] text-purple-400 font-semibold">{inv.workRole} · {inv.role}</p>
+                        </div>
+                        {hasManagementAccess && (
+                          <button onClick={() => handleCancelInvite(inv._id)} className="text-xs text-red-400 hover:underline">
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "members" && (
+            <div className="p-6 overflow-y-auto h-full max-w-4xl mx-auto space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <h2 className="text-md font-bold text-white">👤 Team Members List</h2>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <input type="text" placeholder="Search members..." value={memberSearch} onChange={e => setMemberSearch(e.target.value)} className="input-base text-xs py-1.5 w-full sm:w-64" />
+                  {isOwner && (
+                    <button onClick={() => setShowTransferModal(true)} className="btn-ghost text-xs whitespace-nowrap px-4 py-1.5 border border-purple-800">
+                      Transfer Ownership
                     </button>
                   )}
                 </div>
-              </>
-            )}
-
-            {/* Pending Invites list */}
-            <div className="border-t border-gray-800 pt-4 space-y-3">
-              <label className="text-xs font-semibold text-gray-400 block">Pending Invitations ({project?.pendingInvites?.length || 0})</label>
-              <div className="space-y-2">
-                {project?.pendingInvites?.length === 0 ? (
-                  <p className="text-xs text-gray-600">No pending invites.</p>
-                ) : (
-                  project?.pendingInvites?.map(inv => (
-                    <div key={inv._id} className="flex justify-between items-center bg-gray-900 border border-gray-800 rounded-xl p-3">
-                      <div>
-                        <p className="text-xs text-white font-bold">{inv.email}</p>
-                        <p className="text-[10px] text-purple-400 font-semibold">{inv.workRole} · {inv.role}</p>
-                      </div>
-                      {hasManagementAccess && (
-                        <button onClick={() => handleCancelInvite(inv._id)} className="text-xs text-red-400 hover:underline">
-                          Cancel
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
               </div>
-            </div>
-          </div>
-        )}
 
-        {activeTab === "members" && (
-          <div className="p-6 overflow-y-auto h-full max-w-4xl mx-auto space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <h2 className="text-md font-bold text-white">👤 Team Members List</h2>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <input type="text" placeholder="Search members..." value={memberSearch} onChange={e => setMemberSearch(e.target.value)} className="input-base text-xs py-1.5 w-full sm:w-64" />
-                {isOwner && (
-                  <button onClick={() => setShowTransferModal(true)} className="btn-ghost text-xs whitespace-nowrap px-4 py-1.5 border border-purple-800">
-                    Transfer Ownership
-                  </button>
-                )}
-              </div>
-            </div>
+              <div className="space-y-3">
+                {filteredMembers.map((m) => {
+                  const memberUser = m.user;
+                  const isOnline = members.some((online) => online.userId === memberUser?._id);
+                  const isSelf = memberUser?._id === user?._id;
+                  const showActions = hasManagementAccess && !isSelf && m.role !== "owner";
 
-            <div className="space-y-3">
-              {filteredMembers.map((m) => {
-                const memberUser = m.user;
-                const isOnline = members.some((online) => online.userId === memberUser?._id);
-                const isSelf = memberUser?._id === user?._id;
-                const showActions = hasManagementAccess && !isSelf && m.role !== "owner";
-
-                return (
-                  <div key={m._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className="w-8 h-8 rounded-full bg-purple-900 border border-purple-800 flex items-center justify-center font-bold text-purple-200">
-                          {memberUser?.name?.[0]?.toUpperCase() || "?"}
-                        </div>
-                        <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${isOnline ? "bg-green-500" : "bg-gray-600"}`} />
-                      </div>
-                      <div>
-                        <p className="text-xs text-white font-bold">{memberUser?.name} {isSelf && <span className="text-gray-500">(you)</span>}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">{memberUser?.email}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                      {/* Permission Role */}
-                      {showActions ? (
-                        <select value={m.role} onChange={e => handleRoleChange(memberUser?._id, "role", e.target.value)} className="input-base text-xs py-1 w-24">
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      ) : (
-                        <span className="badge badge-active">{m.role}</span>
-                      )}
-
-                      {/* Work Role Designation */}
-                      {showActions ? (
-                        <select value={m.workRole} onChange={e => handleRoleChange(memberUser?._id, "workRole", e.target.value)} className="input-base text-xs py-1 w-36">
-                          {WORK_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                      ) : (
-                        <span className="badge">{m.workRole}</span>
-                      )}
-
-                      {showActions && (
-                        <button onClick={() => handleRemoveMember(memberUser?._id)} className="text-xs bg-red-950/50 hover:bg-red-900/50 border border-red-900 text-red-300 px-3 py-1 rounded-lg font-bold">
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeTab === "tasks" && (
-          <div className="flex-1 overflow-hidden h-full">
-            <KanbanBoard workspaceId={workspaceId} members={project?.members?.map(m => m.user).filter(Boolean) || []} />
-          </div>
-        )}
-
-        {activeTab === "chat" && (
-          <div className="p-6 h-full max-w-3xl mx-auto flex flex-col">
-            <div className="flex-1 border border-gray-800 rounded-2xl bg-gray-900 overflow-hidden h-full">
-              <ChatBox messages={messages} onSend={sendChat} currentUser={user} />
-            </div>
-          </div>
-        )}
-
-        {activeTab === "files" && (
-          <div className="flex-1 flex overflow-hidden h-full">
-            {sidebarOpen && (
-              <>
-                <div style={{ width: sidebarW, minWidth: 150, maxWidth: 400, flexShrink: 0, borderRight: "1px solid #252526", display: "flex", flexDirection: "column" }}>
-                  <div className="flex-1 overflow-hidden flex flex-col">
-                    <FileExplorer workspaceId={workspaceId} fs={fs} onOpenFile={openFile} />
-                  </div>
-                  <div className="flex-shrink-0 border-t p-2" style={{ borderColor: "#252526", background: "#252526" }}>
-                    <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: "#858585" }}>
-                      Online — {members.length}
-                    </p>
-                    <div className="flex flex-col gap-1">
-                      {members.map((m, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                            style={{ background: m.color, color: "#1e1e1e" }}>
-                            {m.name?.[0]?.toUpperCase()}
+                  return (
+                    <div key={m._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-8 h-8 rounded-full bg-purple-900 border border-purple-800 flex items-center justify-center font-bold text-purple-200">
+                            {memberUser?.name?.[0]?.toUpperCase() || "?"}
                           </div>
-                          <span className="text-[10px] flex-1 truncate" style={{ color: "#cccccc" }}>{m.name}</span>
+                          <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${isOnline ? "bg-green-500" : "bg-gray-600"}`} />
                         </div>
-                      ))}
+                        <div>
+                          <p className="text-xs text-white font-bold">{memberUser?.name} {isSelf && <span className="text-gray-500">(you)</span>}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">{memberUser?.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* Permission Role */}
+                        {showActions ? (
+                          <select value={m.role} onChange={e => handleRoleChange(memberUser?._id, "role", e.target.value)} className="input-base text-xs py-1 w-24">
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        ) : (
+                          <span className="badge badge-active">{m.role}</span>
+                        )}
+
+                        {/* Work Role Designation */}
+                        {showActions ? (
+                          <select value={m.workRole} onChange={e => handleRoleChange(memberUser?._id, "workRole", e.target.value)} className="input-base text-xs py-1 w-36">
+                            {WORK_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        ) : (
+                          <span className="badge">{m.workRole}</span>
+                        )}
+
+                        {showActions && (
+                          <button onClick={() => handleRemoveMember(memberUser?._id)} className="text-xs bg-red-950/50 hover:bg-red-900/50 border border-red-900 text-red-300 px-3 py-1 rounded-lg font-bold">
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "tasks" && (
+            <div className="flex-1 overflow-hidden h-full">
+              <KanbanBoard workspaceId={workspaceId} members={project?.members?.map(m => m.user).filter(Boolean) || []} />
+            </div>
+          )}
+
+          {activeTab === "chat" && (
+            <div className="p-6 h-full max-w-3xl mx-auto flex flex-col">
+              <div className="flex-1 border border-gray-800 rounded-2xl bg-gray-900 overflow-hidden h-full">
+                <ChatBox messages={messages} onSend={sendChat} currentUser={user} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === "files" && (
+            <div className="flex-1 flex overflow-hidden h-full" style={{ fontFamily: "Consolas, 'JetBrains Mono', monospace" }}>
+              {sidebarOpen && (
+                <>
+                  <div style={{ width: sidebarW, minWidth: 150, maxWidth: 400, flexShrink: 0, borderRight: "1px solid #252526", display: "flex", flexDirection: "column" }}>
+                    <div className="flex-1 overflow-hidden flex flex-col bg-[#252526]">
+                      <FileExplorer workspaceId={workspaceId} fs={fs} onOpenFile={openFile} />
+                    </div>
+                    <div className="flex-shrink-0 border-t p-2" style={{ borderColor: "#252526", background: "#252526" }}>
+                      <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: "#858585" }}>
+                        Online — {members.length}
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {members.map((m, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                              style={{ background: m.color, color: "#1e1e1e" }}>
+                              {m.name?.[0]?.toUpperCase()}
+                            </div>
+                            <span className="text-[10px] flex-1 truncate" style={{ color: "#cccccc" }}>{m.name}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div onMouseDown={handleSidebarResizeDrag}
-                  className="w-1 flex-shrink-0 cursor-col-resize transition-colors"
-                  style={{ background: "#2d2d2d" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#007acc")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "#2d2d2d")} />
-              </>
-            )}
+                  <div onMouseDown={handleSidebarResizeDrag}
+                    className="w-1 flex-shrink-0 cursor-col-resize transition-colors"
+                    style={{ background: "#2d2d2d" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#007acc")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#2d2d2d")} />
+                </>
+              )}
 
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-              <button onClick={() => setSidebarOpen((v) => !v)}
-                className="absolute left-0 top-1/2 z-10 w-4 h-12 flex items-center justify-center rounded-r transition-colors"
-                style={{ background: "#3c3c3c", color: "#858585", transform: "translateY(-50%)", marginLeft: sidebarOpen ? sidebarW : 0 }}
-                title={sidebarOpen ? "Close sidebar" : "Open sidebar"}>
-                {sidebarOpen ? "‹" : "›"}
-              </button>
+              <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+                <button onClick={() => setSidebarOpen((v) => !v)}
+                  className="absolute left-0 top-1/2 z-10 w-4 h-12 flex items-center justify-center rounded-r transition-colors"
+                  style={{ background: "#3c3c3c", color: "#858585", transform: "translateY(-50%)", marginLeft: sidebarOpen ? sidebarW : 0 }}
+                  title={sidebarOpen ? "Close sidebar" : "Open sidebar"}>
+                  {sidebarOpen ? "‹" : "›"}
+                </button>
 
-              {openFiles.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-4"
-                  style={{ background: "#1e1e1e" }}>
-                  <div className="text-5xl mb-2">💻</div>
-                  <p className="text-sm" style={{ color: "#858585" }}>No file is open</p>
-                  <p className="text-xs" style={{ color: "#555" }}>Select a file from the Explorer or create a new one</p>
-                  <button onClick={() => fs.createFile("main.py", '# Hello World\nprint("Hello, DevCollab!")\n')}
-                    className="text-xs px-4 py-2 rounded" style={{ background: "#0e639c", color: "#fff" }}>
-                    + New Python File
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <EditorTabs openFiles={openFiles} activeFilePath={activeFilePath} onSelect={setActiveFilePath} onClose={closeFile} />
+                {openFiles.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-4"
+                    style={{ background: "#1e1e1e" }}>
+                    <div className="text-5xl mb-2">💻</div>
+                    <p className="text-sm" style={{ color: "#858585" }}>No file is open</p>
+                    <p className="text-xs" style={{ color: "#555" }}>Select a file from the Explorer or create a new one</p>
+                    <button onClick={() => fs.createFile("main.py", '# Hello World\nprint("Hello, DevCollab!")\n')}
+                      className="text-xs px-4 py-2 rounded" style={{ background: "#0e639c", color: "#fff" }}>
+                      + New Python File
+                    </button>
+                  </div>
+                ) : (
                   <div className="flex-1 overflow-hidden" style={{ height: terminalOpen ? `calc(100% - ${terminalHeight}px - 29px)` : "100%" }}>
                     <CodeEditor
                       code={activeFile?.content || ""}
@@ -795,98 +835,98 @@ export default function Workspace() {
                       }}
                     />
                   </div>
-                </>
-              )}
-
-              <AnimatePresence>
-                {terminalOpen && (
-                  <motion.div
-                    initial={{ height: 0 }} animate={{ height: terminalHeight }} exit={{ height: 0 }}
-                    transition={{ duration: 0.15, ease: "easeInOut" }}
-                    className="flex flex-col flex-shrink-0 overflow-hidden"
-                    style={{ borderTop: "1px solid #252526" }}
-                  >
-                    <ResizeHandle onMouseDown={handleTermResizeDrag} />
-                    <div className="flex-1 overflow-hidden">
-                      <RealTerminal ref={terminalRef} workspaceId={workspaceId} userId={user?._id} onFsChanged={() => fs.refresh()} />
-                    </div>
-                  </motion.div>
                 )}
-              </AnimatePresence>
 
-              <div className="flex items-center justify-between px-3 flex-shrink-0"
-                style={{ background: "#007acc", height: 22, minHeight: 22 }}>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setTerminalOpen((v) => !v)}
-                    className="text-[10px] font-medium flex items-center gap-1 hover:bg-white/20 px-2 rounded transition-colors"
-                    style={{ color: "#fff", height: "100%" }}>
-                    ⌨ {terminalOpen ? "Hide Terminal" : "Show Terminal"}
-                  </button>
-                  {isConnected ? <span className="text-[10px] flex items-center gap-1" style={{ color: "#cef9ce" }}><span className="w-1.5 h-1.5 rounded-full bg-green-300" />Live</span> : <span className="text-[10px]" style={{ color: "#fecaca" }}>Offline</span>}
+                <AnimatePresence>
+                  {terminalOpen && (
+                    <motion.div
+                      initial={{ height: 0 }} animate={{ height: terminalHeight }} exit={{ height: 0 }}
+                      transition={{ duration: 0.15, ease: "easeInOut" }}
+                      className="flex flex-col flex-shrink-0 overflow-hidden"
+                      style={{ borderTop: "1px solid #252526" }}
+                    >
+                      <ResizeHandle onMouseDown={handleTermResizeDrag} />
+                      <div className="flex-1 overflow-hidden">
+                        <RealTerminal ref={terminalRef} workspaceId={workspaceId} userId={user?._id} onFsChanged={() => fs.refresh()} />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div className="flex items-center justify-between px-3 flex-shrink-0"
+                  style={{ background: "#007acc", height: 22, minHeight: 22 }}>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setTerminalOpen((v) => !v)}
+                      className="text-[10px] font-medium flex items-center gap-1 hover:bg-white/20 px-2 rounded transition-colors"
+                      style={{ color: "#fff", height: "100%" }}>
+                      ⌨ {terminalOpen ? "Hide Terminal" : "Show Terminal"}
+                    </button>
+                    {isConnected ? <span className="text-[10px] flex items-center gap-1" style={{ color: "#cef9ce" }}><span className="w-1.5 h-1.5 rounded-full bg-green-300" />Live</span> : <span className="text-[10px]" style={{ color: "#fecaca" }}>Offline</span>}
+                  </div>
+                  {activeFile && (
+                    <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.7)" }}>
+                      {activeFile.language} · {activeFile.name}
+                    </span>
+                  )}
                 </div>
-                {activeFile && (
-                  <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.7)" }}>
-                    {activeFile.language} · {activeFile.name}
-                  </span>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="p-6 overflow-y-auto h-full max-w-md mx-auto space-y-6">
+              <h2 className="text-md font-bold text-white">⚙ Project Settings</h2>
+              {settingsSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{settingsSuccess}</p>}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Project Name *</label>
+                  <input type="text" value={editProjName} onChange={e => setEditProjName(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Description</label>
+                  <textarea rows={3} value={editProjDesc} onChange={e => setEditProjDesc(e.target.value)} disabled={!hasManagementAccess} className="input-base resize-none" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Priority</label>
+                    <select value={editProjPrio} onChange={e => setEditProjPrio(e.target.value)} disabled={!hasManagementAccess} className="input-base">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Status</label>
+                    <select value={editProjStatus} onChange={e => setEditProjStatus(e.target.value)} disabled={!hasManagementAccess} className="input-base">
+                      <option value="active">Active</option>
+                      <option value="completed">Completed</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-500">Deadline</label>
+                  <input type="date" value={editProjDeadline} onChange={e => setEditProjDeadline(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
+                </div>
+
+                {hasManagementAccess && (
+                  <button onClick={handleSaveProjectSettings} className="btn-primary text-xs w-full py-2.5">
+                    Save Project Settings
+                  </button>
+                )}
+
+                {isOwner && (
+                  <div className="border-t border-gray-800 pt-5">
+                    <button onClick={handleDeleteProject} className="btn-primary bg-red-950 hover:bg-red-900 border border-red-900 text-red-300 text-xs w-full py-2.5">
+                      Delete Project Completely
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
-          </div>
-        )}
-
-        {activeTab === "settings" && (
-          <div className="p-6 overflow-y-auto h-full max-w-md mx-auto space-y-6">
-            <h2 className="text-md font-bold text-white">⚙ Project Settings</h2>
-            {settingsSuccess && <p className="text-xs text-green-400 bg-green-950/20 border border-green-900 rounded-lg p-2">{settingsSuccess}</p>}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Project Name *</label>
-                <input type="text" value={editProjName} onChange={e => setEditProjName(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Description</label>
-                <textarea rows={3} value={editProjDesc} onChange={e => setEditProjDesc(e.target.value)} disabled={!hasManagementAccess} className="input-base resize-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Priority</label>
-                  <select value={editProjPrio} onChange={e => setEditProjPrio(e.target.value)} disabled={!hasManagementAccess} className="input-base">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Status</label>
-                  <select value={editProjStatus} onChange={e => setEditProjStatus(e.target.value)} disabled={!hasManagementAccess} className="input-base">
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-gray-500">Deadline</label>
-                <input type="date" value={editProjDeadline} onChange={e => setEditProjDeadline(e.target.value)} disabled={!hasManagementAccess} className="input-base" />
-              </div>
-
-              {hasManagementAccess && (
-                <button onClick={handleSaveProjectSettings} className="btn-primary text-xs w-full py-2.5">
-                  Save Project Settings
-                </button>
-              )}
-
-              {isOwner && (
-                <div className="border-t border-gray-800 pt-5">
-                  <button onClick={handleDeleteProject} className="btn-primary bg-red-950 hover:bg-red-900 border border-red-900 text-red-300 text-xs w-full py-2.5">
-                    Delete Project Completely
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Transfer Ownership Modal */}
