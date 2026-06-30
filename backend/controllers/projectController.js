@@ -1,63 +1,80 @@
 // backend/controllers/projectController.js
+const Project   = require("../models/Project");
+const Workspace = require("../models/Workspace");
+const User      = require("../models/User");
+const crypto    = require("crypto");
+const { createNotification } = require("./notificationController");
 
-const Project = require("../models/Project");
-
-// ─── Helper: check if user is member ────────────────────────────────
+// Helper: check if user is a member/owner
 const isMember = (project, userId) => {
   const id = userId.toString();
   return (
     project.owner.toString() === id ||
-    (project.collaborators || []).some((c) => c.toString() === id)
+    (project.members || []).some((m) => m.user && (m.user._id || m.user).toString() === id)
   );
 };
 
 // ─── Create Project ──────────────────────────────────────────────────
-// Owner is automatically added as the first collaborator.
 exports.createProject = async (req, res) => {
   try {
-    const { title, description, techStack, githubRepo, priority, deadline } = req.body;
+    const { projectName, description, teamName, teamLogo, priority, deadline } = req.body;
 
-    const Workspace = require("../models/Workspace");
+    if (!projectName || !projectName.trim()) {
+      return res.status(400).json({ message: "Project Name is required" });
+    }
+    if (!teamName || !teamName.trim()) {
+      return res.status(400).json({ message: "Team Name is required" });
+    }
+
+    // Auto-create Workspace
     const workspace = await Workspace.create({
-      name:    title,
+      name:    projectName.trim(),
       owner:   req.user._id,
       members: [req.user._id],
     });
 
     const project = await Project.create({
-      title,
-      description,
-      techStack,
-      githubRepo,
+      projectName:   projectName.trim(),
+      description:   description || "",
+      teamName:      teamName.trim(),
+      teamLogo:      teamLogo || "",
       priority:      priority || "medium",
       deadline:      deadline || null,
       owner:         req.user._id,
-      collaborators: [req.user._id], // owner auto-joined
+      members: [
+        {
+          user:     req.user._id,
+          role:     "owner",
+          workRole: "Project Manager",
+        },
+      ],
       workspace:     workspace._id,
     });
 
     const populated = await project.populate("owner", "name email avatar");
     res.status(201).json(populated);
   } catch (error) {
+    console.error("createProject error:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
 // ─── Get My Projects ──────────────────────────────────────────────────
-// SECURITY: Only returns projects the authenticated user owns OR
-// is a collaborator on. Never returns other users' private projects.
 exports.getMyProjects = async (req, res) => {
   try {
     const { status, priority } = req.query;
     const filter = {
-      $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
+      $or: [
+        { owner: req.user._id },
+        { "members.user": req.user._id },
+      ],
     };
     if (status)   filter.status   = status;
     if (priority) filter.priority = priority;
 
     const projects = await Project.find(filter)
       .populate("owner",         "name email avatar")
-      .populate("collaborators", "name email avatar")
+      .populate("members.user",  "name email avatar")
       .populate("workspace",     "name")
       .sort({ createdAt: -1 });
 
@@ -72,7 +89,7 @@ exports.getOwnedProjects = async (req, res) => {
   try {
     const projects = await Project.find({ owner: req.user._id })
       .populate("owner",         "name email avatar")
-      .populate("collaborators", "name email avatar")
+      .populate("members.user",  "name email avatar")
       .populate("workspace",     "name")
       .sort({ createdAt: -1 });
 
@@ -83,15 +100,14 @@ exports.getOwnedProjects = async (req, res) => {
 };
 
 // ─── Get Projects Shared With Me ──────────────────────────────────────
-// Projects where user is a collaborator but NOT the owner.
 exports.getSharedProjects = async (req, res) => {
   try {
     const projects = await Project.find({
-      collaborators: req.user._id,
+      "members.user": req.user._id,
       owner:         { $ne: req.user._id },
     })
       .populate("owner",         "name email avatar")
-      .populate("collaborators", "name email avatar")
+      .populate("members.user",  "name email avatar")
       .populate("workspace",     "name")
       .sort({ createdAt: -1 });
 
@@ -102,21 +118,38 @@ exports.getSharedProjects = async (req, res) => {
 };
 
 // ─── Get Single Project ──────────────────────────────────────────────
-// SECURITY: Enforces membership check — non-members receive 403.
 exports.getProjectById = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
       .populate("owner",         "name email avatar")
-      .populate("collaborators", "name email avatar")
+      .populate("members.user",  "name email avatar")
       .populate("workspace",     "name");
 
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    // IDOR guard — must be owner or collaborator
     if (!isMember(project, req.user._id)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this project.",
       });
+    }
+
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Get Project by Workspace ID ──────────────────────────────────────
+exports.getProjectByWorkspace = async (req, res) => {
+  try {
+    const project = await Project.findOne({ workspace: req.params.workspaceId })
+      .populate("owner",         "name email avatar")
+      .populate("members.user",  "name email avatar");
+
+    if (!project) return res.status(404).json({ message: "Project not found for this workspace" });
+
+    if (!isMember(project, req.user._id)) {
+      return res.status(403).json({ message: "Access denied" });
     }
 
     res.json(project);
@@ -132,23 +165,20 @@ exports.updateProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: "Project not found" });
 
     const isOwner  = project.owner.toString() === req.user._id.toString();
-    const isMemberCheck = (project.collaborators || [])
-      .map((c) => c.toString()).includes(req.user._id.toString());
+    const isAdmin  = project.members.some(
+      (m) => m.user && m.user.toString() === req.user._id.toString() && m.role === "admin"
+    );
 
-    if (!isOwner && !isMemberCheck)
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: "Access denied" });
-
-    // Only owner can change title/description/techStack etc.
-    // Members can link a workspace
-    const allowedFields = ["workspace"];
-    if (isOwner) {
-      allowedFields.push(
-        "title", "description", "techStack",
-        "githubRepo", "priority", "deadline", "status"
-      );
     }
 
+    // Only owner can change status/priority/deadline/projectName/teamName/teamLogo/description
     const updates = {};
+    const allowedFields = [
+      "projectName", "description", "teamName", "teamLogo", "priority", "deadline", "status"
+    ];
+
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
@@ -157,7 +187,7 @@ exports.updateProject = async (req, res) => {
       req.params.id, updates, { new: true }
     )
       .populate("owner",         "name email avatar")
-      .populate("collaborators", "name email avatar")
+      .populate("members.user",  "name email avatar")
       .populate("workspace",     "name");
 
     res.json(updated);
@@ -175,8 +205,13 @@ exports.deleteProject = async (req, res) => {
     if (project.owner.toString() !== req.user._id.toString())
       return res.status(403).json({ message: "Only the project owner can delete it" });
 
+    // Clean up Workspace as well
+    if (project.workspace) {
+      await Workspace.findByIdAndDelete(project.workspace);
+    }
+
     await project.deleteOne();
-    res.json({ message: "Project deleted" });
+    res.json({ message: "Project deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -191,10 +226,21 @@ exports.leaveProject = async (req, res) => {
     if (project.owner.toString() === req.user._id.toString())
       return res.status(400).json({ message: "Owner cannot leave their own project" });
 
-    project.collaborators = project.collaborators.filter(
-      (c) => c.toString() !== req.user._id.toString()
+    project.members = project.members.filter(
+      (m) => m.user && m.user.toString() !== req.user._id.toString()
     );
     await project.save();
+
+    // Also remove from Workspace
+    if (project.workspace) {
+      const workspace = await Workspace.findById(project.workspace);
+      if (workspace) {
+        workspace.members = workspace.members.filter(
+          (m) => m.toString() !== req.user._id.toString()
+        );
+        await workspace.save();
+      }
+    }
 
     res.json({ message: "You have left the project" });
   } catch (error) {
@@ -202,22 +248,371 @@ exports.leaveProject = async (req, res) => {
   }
 };
 
-// ─── Remove Member (owner only) ───────────────────────────────────────
+// ─── Remove Member ───────────────────────────────────────────────────
 exports.removeMember = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    if (project.owner.toString() !== req.user._id.toString())
-      return res.status(403).json({ message: "Only the project owner can remove members" });
+    const memberId = req.params.memberId;
+    if (project.owner.toString() === memberId) {
+      return res.status(400).json({ message: "Cannot remove the project owner" });
+    }
 
-    project.collaborators = project.collaborators.filter(
-      (c) => c.toString() !== req.params.memberId
+    // Role-based auth: Only Owner or Admin can remove
+    const requesterId = req.user._id.toString();
+    const isRequesterOwner = project.owner.toString() === requesterId;
+    const requesterMember = project.members.find((m) => m.user && m.user.toString() === requesterId);
+    const isRequesterAdmin = requesterMember && requesterMember.role === "admin";
+
+    if (!isRequesterOwner && !isRequesterAdmin) {
+      return res.status(403).json({ message: "Only Owner or Admin can remove members" });
+    }
+
+    // Admins cannot remove Admins or Owners
+    const targetMember = project.members.find((m) => m.user && m.user.toString() === memberId);
+    if (isRequesterAdmin && targetMember && (targetMember.role === "admin" || targetMember.role === "owner")) {
+      return res.status(403).json({ message: "Admins cannot remove other Admins or Owners" });
+    }
+
+    project.members = project.members.filter(
+      (m) => m.user && m.user.toString() !== memberId
     );
     await project.save();
 
-    res.json({ message: "Member removed" });
+    // Also remove from Workspace
+    if (project.workspace) {
+      const workspace = await Workspace.findById(project.workspace);
+      if (workspace) {
+        workspace.members = workspace.members.filter(
+          (m) => m.toString() !== memberId
+        );
+        await workspace.save();
+      }
+    }
+
+    // Trigger instant client socket update
+    if (global.io && project.workspace) {
+      global.io.to(project.workspace.toString()).emit("membersListUpdated");
+    }
+
+    res.json({ message: "Member removed successfully" });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Update Member Role (Permission Role / Work Role) ────────────────
+exports.updateMemberRole = async (req, res) => {
+  try {
+    const { role, workRole } = req.body;
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    const memberId = req.params.memberId;
+    if (project.owner.toString() === memberId) {
+      return res.status(400).json({ message: "Cannot change the role of the Owner" });
+    }
+
+    // Role-based auth
+    const requesterId = req.user._id.toString();
+    const isRequesterOwner = project.owner.toString() === requesterId;
+    const requesterMember = project.members.find((m) => m.user && m.user.toString() === requesterId);
+    const isRequesterAdmin = requesterMember && requesterMember.role === "admin";
+
+    if (!isRequesterOwner && !isRequesterAdmin) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    // Admins cannot edit other Admins or Owners
+    const targetMember = project.members.find((m) => m.user && m.user.toString() === memberId);
+    if (!targetMember) return res.status(404).json({ message: "Member not found in project" });
+
+    if (isRequesterAdmin && (targetMember.role === "admin" || targetMember.role === "owner")) {
+      return res.status(403).json({ message: "Admins cannot change role of other Admins or Owners" });
+    }
+
+    if (role && ["admin", "member"].includes(role)) {
+      targetMember.role = role;
+    }
+    if (workRole) {
+      targetMember.workRole = workRole;
+    }
+
+    await project.save();
+
+    // Trigger instant client socket update
+    if (global.io && project.workspace) {
+      global.io.to(project.workspace.toString()).emit("membersListUpdated");
+    }
+
+    res.json({ message: "Member role updated successfully", member: targetMember });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Transfer Ownership ───────────────────────────────────────────────
+exports.transferOwnership = async (req, res) => {
+  try {
+    const { targetUserId } = req.body;
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    if (project.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Only the current Owner can transfer ownership" });
+    }
+
+    const targetMember = project.members.find((m) => m.user && m.user.toString() === targetUserId);
+    if (!targetMember) {
+      return res.status(400).json({ message: "Target user is not a member of this project" });
+    }
+
+    // Current owner becomes Admin
+    const ownerMember = project.members.find((m) => m.user && m.user.toString() === req.user._id.toString());
+    if (ownerMember) ownerMember.role = "admin";
+
+    // Target becomes Owner
+    targetMember.role = "owner";
+    project.owner = targetUserId;
+
+    await project.save();
+
+    // Trigger instant client socket update
+    if (global.io && project.workspace) {
+      global.io.to(project.workspace.toString()).emit("membersListUpdated");
+    }
+
+    res.json({ message: "Ownership transferred successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Generate Invite Link ─────────────────────────────────────────────
+exports.generateInviteLink = async (req, res) => {
+  try {
+    const { role, workRole } = req.body;
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Auth check
+    const requesterId = req.user._id.toString();
+    const isOwner = project.owner.toString() === requesterId;
+    const match = project.members.find((m) => m.user && m.user.toString() === requesterId);
+    const isAdmin = match && match.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Only Owners and Admins can generate invite links" });
+    }
+
+    const token = crypto.randomBytes(16).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Valid for 7 days
+
+    project.inviteLinks.push({
+      token,
+      role:     role || "member",
+      workRole: workRole || "Frontend Developer",
+      expiresAt,
+    });
+
+    await project.save();
+
+    const link = `${process.env.CLIENT_URL || "http://localhost:5173"}/invite/accept/${token}`;
+    res.json({ link, token });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Invite by Email ──────────────────────────────────────────────────
+exports.inviteByEmail = async (req, res) => {
+  try {
+    const { email, role, workRole } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Auth check
+    const requesterId = req.user._id.toString();
+    const isOwner = project.owner.toString() === requesterId;
+    const match = project.members.find((m) => m.user && m.user.toString() === requesterId);
+    const isAdmin = match && match.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Only Owners and Admins can invite members" });
+    }
+
+    // Check if already a member
+    const foundUser = await User.findOne({ email: email.toLowerCase().trim() });
+    if (foundUser) {
+      const alreadyIn = project.members.some(
+        (m) => m.user && m.user.toString() === foundUser._id.toString()
+      );
+      if (alreadyIn) return res.status(400).json({ message: "User is already a member" });
+    }
+
+    // Check if already pending
+    const alreadyPending = project.pendingInvites.some(
+      (inv) => inv.email.toLowerCase() === email.toLowerCase().trim()
+    );
+    if (alreadyPending) {
+      return res.status(400).json({ message: "An invitation is already pending for this email" });
+    }
+
+    const token = crypto.randomBytes(16).toString("hex");
+    project.pendingInvites.push({
+      email:     email.toLowerCase().trim(),
+      role:      role || "member",
+      workRole:  workRole || "Frontend Developer",
+      token,
+      invitedBy: req.user._id,
+    });
+
+    await project.save();
+
+    // If user has an account, send a direct socket notification
+    if (foundUser) {
+      await createNotification({
+        recipient: foundUser._id,
+        sender:    req.user._id,
+        type:      "invitation_received",
+        message:   `${req.user.name} invited you to join team "${project.teamName}" for project "${project.projectName}"`,
+        link:      `/workspace/${project.workspace}`,
+        meta:      { projectId: project._id, token },
+      });
+    }
+
+    res.json({ message: "Invite sent successfully", pending: project.pendingInvites });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Cancel Pending Invite ────────────────────────────────────────────
+exports.cancelPendingInvite = async (req, res) => {
+  try {
+    const { inviteId } = req.params;
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Auth check
+    const requesterId = req.user._id.toString();
+    const isOwner = project.owner.toString() === requesterId;
+    const match = project.members.find((m) => m.user && m.user.toString() === requesterId);
+    const isAdmin = match && match.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    project.pendingInvites = project.pendingInvites.filter(
+      (inv) => inv._id.toString() !== inviteId
+    );
+
+    await project.save();
+    res.json({ message: "Invitation cancelled", pending: project.pendingInvites });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Accept Invite Token ──────────────────────────────────────────────
+exports.acceptInviteToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    // Find the project containing either the inviteLink or pendingInvite matching this token
+    let project = await Project.findOne({
+      $or: [
+        { "inviteLinks.token": token },
+        { "pendingInvites.token": token },
+      ],
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Invitation token invalid or expired" });
+    }
+
+    // Already a member?
+    const userIdStr = req.user._id.toString();
+    const alreadyIn = project.members.some(
+      (m) => m.user && m.user.toString() === userIdStr
+    );
+    if (alreadyIn) {
+      return res.status(400).json({ message: "You are already a member of this project" });
+    }
+
+    // Get the invitation specs
+    let selectedRole = "member";
+    let selectedWorkRole = "Frontend Developer";
+
+    // 1. Check pending email invite
+    const emailMatch = project.pendingInvites.find((inv) => inv.token === token);
+    if (emailMatch) {
+      selectedRole = emailMatch.role;
+      selectedWorkRole = emailMatch.workRole;
+      // Clean up the email invite
+      project.pendingInvites = project.pendingInvites.filter((inv) => inv.token !== token);
+    } else {
+      // 2. Check general invite link
+      const linkMatch = project.inviteLinks.find((link) => link.token === token);
+      if (linkMatch) {
+        if (linkMatch.expiresAt && new Date(linkMatch.expiresAt) < new Date()) {
+          return res.status(400).json({ message: "Invitation link has expired" });
+        }
+        selectedRole = linkMatch.role;
+        selectedWorkRole = linkMatch.workRole;
+      }
+    }
+
+    // Add to project members
+    project.members.push({
+      user:     req.user._id,
+      role:     selectedRole,
+      workRole: selectedWorkRole,
+      joinedAt: new Date(),
+    });
+
+    await project.save();
+
+    // Add to Workspace members
+    if (project.workspace) {
+      const workspace = await Workspace.findById(project.workspace);
+      if (workspace) {
+        const wsAlreadyIn = workspace.members.some((m) => m.toString() === userIdStr);
+        if (!wsAlreadyIn) {
+          workspace.members.push(req.user._id);
+          await workspace.save();
+        }
+      }
+    }
+
+    // Trigger instant client socket update
+    if (global.io && project.workspace) {
+      global.io.to(project.workspace.toString()).emit("membersListUpdated");
+    }
+
+    // Notify all members
+    const notifyPromises = project.members
+      .filter((m) => m.user && m.user.toString() !== userIdStr)
+      .map((m) =>
+        createNotification({
+          recipient: m.user,
+          sender:    req.user._id,
+          type:      "workspace_joined",
+          message:   `${req.user.name} joined the team as ${selectedWorkRole}!`,
+          link:      `/workspace/${project.workspace}`,
+          meta:      { projectId: project._id },
+        })
+      );
+    await Promise.all(notifyPromises);
+
+    res.json({ message: "Successfully joined the project workspace!", workspaceId: project.workspace });
+  } catch (error) {
+    console.error("acceptInviteToken error:", error);
     res.status(500).json({ message: error.message });
   }
 };

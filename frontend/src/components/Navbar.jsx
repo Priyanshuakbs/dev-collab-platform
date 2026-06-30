@@ -15,7 +15,6 @@ import NotificationBell from "./NotificationBell";
 const NAV_LINKS = [
   { path: "/dashboard",   label: "Dashboard",   icon: "⬡" },
   { path: "/projects",    label: "Projects",    icon: "◈" },
-  { path: "/invitations", label: "Invitations", icon: "✉" },
   { path: "/profile",     label: "Profile",     icon: "◉" },
 ];
 

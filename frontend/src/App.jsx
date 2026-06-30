@@ -10,7 +10,7 @@ import Dashboard       from "./pages/Dashboard";
 import ProfilePage     from "./pages/ProfilePage";
 import Workspace       from "./pages/Workspace";
 import ProjectPage     from "./pages/ProjectPage";
-import InvitationsPage from "./pages/InvitationsPage";
+import AcceptInvite from "./pages/AcceptInvite";
 
 // ── Components ───────────────────────────────────────────────────────
 import Navbar from "./components/Navbar";
@@ -68,9 +68,9 @@ function App() {
           </ProtectedRoute>
         } />
 
-        <Route path="/invitations" element={
+        <Route path="/invite/accept/:token" element={
           <ProtectedRoute>
-            <WithNavbar><InvitationsPage /></WithNavbar>
+            <AcceptInvite />
           </ProtectedRoute>
         } />
 
