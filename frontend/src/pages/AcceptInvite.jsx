@@ -24,8 +24,8 @@ export default function AcceptInvite() {
 
     api.post(`/projects/invites/accept/${token}`)
       .then((res) => {
-        // Successfully accepted! Navigate to the workspace
-        navigate(`/workspace/${res.data.workspaceId}`);
+        // Successfully accepted! Navigate to projects page
+        navigate("/projects");
       })
       .catch((err) => {
         setError(err.response?.data?.message || "Invalid or expired invitation token.");

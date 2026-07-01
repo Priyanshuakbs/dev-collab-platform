@@ -18,6 +18,7 @@ const {
   cancelPendingInvite,
   acceptInviteToken,
   getProjectByWorkspace,
+  createProjectWorkspace,
 } = require("../controllers/projectController");
 
 const { protect }              = require("../middleware/authMiddleware");
@@ -35,6 +36,7 @@ router.get("/workspace/:workspaceId", protect, getProjectByWorkspace);
 
 // Single project routes
 router.get(   "/:id",                   protect, getProjectById);
+router.post(  "/:id/workspace",         protect, requireProjectMember, createProjectWorkspace);
 router.put(   "/:id",                   protect, requireProjectMember, updateProject);
 router.delete("/:id",                   protect, requireProjectMember, deleteProject);
 router.post(  "/:id/leave",             protect, requireProjectMember, leaveProject);

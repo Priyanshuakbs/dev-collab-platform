@@ -13,6 +13,11 @@ const workspaceSchema = new mongoose.Schema(
       required: true,
     },
 
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,

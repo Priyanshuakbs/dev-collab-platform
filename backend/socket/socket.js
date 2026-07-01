@@ -52,13 +52,19 @@ module.exports = (io) => {
         const newMessage = await Message.create({
           workspace: data.workspace,
           sender:    data.userId,
-          message:   data.text,
+          message:   data.text || "",
+          fileUrl:   data.fileUrl || "",
+          fileType:  data.fileType || "",
+          fileName:  data.fileName || "",
         });
         io.to(data.workspace).emit("receiveMessage", {
           workspace: data.workspace,
           userId:    data.userId,
           name:      data.name,
-          text:      data.text,
+          text:      data.text || "",
+          fileUrl:   data.fileUrl || "",
+          fileType:  data.fileType || "",
+          fileName:  data.fileName || "",
           timestamp: newMessage.createdAt || new Date().toISOString(),
         });
       } catch (err) {

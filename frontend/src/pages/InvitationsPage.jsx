@@ -1,5 +1,6 @@
 // frontend/src/pages/InvitationsPage.jsx
 import { useState, useEffect, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { AuthContext } from "../context/AuthContext";
 import api from "../services/api";
@@ -210,6 +211,7 @@ function InviteCard({ invite, type, onAccept, onReject, onCancel }) {
 }
 
 export default function InvitationsPage() {
+  const navigate = useNavigate();
   const [received, setReceived]   = useState([]);
   const [sent, setSent]           = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -227,7 +229,14 @@ export default function InvitationsPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const handleAccept = async (id) => { await api.put(`/invitations/${id}/accept`); addToast("Joined the project!", "success"); fetchAll(); };
+  const handleAccept = async (id) => {
+    await api.put(`/invitations/${id}/accept`);
+    addToast("Joined the project!", "success");
+    fetchAll();
+    setTimeout(() => {
+      navigate("/projects");
+    }, 1200);
+  };
   const handleReject = async (id) => { await api.put(`/invitations/${id}/reject`); addToast("Invitation declined.", "info"); fetchAll(); };
   const handleCancel = async (id) => { await api.delete(`/invitations/${id}`); addToast("Invitation cancelled.", "info"); fetchAll(); };
 

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Avatar } from "./ui";
 import NotificationBell from "./NotificationBell";
 import API from "../services/api";
+import AIAssistant from "./AIAssistant";
 
 const GLOBAL_LINKS = [
   { path: "/dashboard",   label: "Dashboard",   icon: "⬡" },
@@ -29,6 +30,7 @@ export default function Navbar({ user, onLogout, variant = "protected" }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceName, setActiveWorkspaceName] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
   const isPublic = variant === "public";
 
   // Parse active workspace ID from URL path if present
@@ -121,6 +123,24 @@ export default function Navbar({ user, onLogout, variant = "protected" }) {
                   </Link>
                 );
               })}
+              <button 
+                onClick={() => setAiOpen(!aiOpen)}
+                className="relative w-full px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors group flex items-center gap-2.5"
+                style={{ color: aiOpen ? "#c4b5fd" : "#6b7280" }}
+              >
+                {aiOpen && (
+                  <motion.span
+                    layoutId="sidebar-pill-ai"
+                    className="absolute inset-0 rounded-xl"
+                    style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.2)" }}
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2.5">
+                  <span className="text-sm">🤖</span>
+                  <span>AI Assistant</span>
+                </span>
+              </button>
             </nav>
           </div>
 
@@ -178,6 +198,13 @@ export default function Navbar({ user, onLogout, variant = "protected" }) {
                   </Link>
                 );
               })}
+              <button 
+                onClick={() => { setMobileOpen(false); setAiOpen(!aiOpen); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                style={{ color: aiOpen ? "#c4b5fd" : "#6b7280", background: aiOpen ? "rgba(16,185,129,0.12)" : "transparent" }}
+              >
+                <span>🤖</span> AI Assistant
+              </button>
             </div>
           </div>
         </div>
@@ -285,6 +312,7 @@ export default function Navbar({ user, onLogout, variant = "protected" }) {
           </motion.div>
         )}
       </AnimatePresence>
+      <AIAssistant isOpen={aiOpen} setIsOpen={setAiOpen} hideFloatingButton={true} />
     </>
   );
 }

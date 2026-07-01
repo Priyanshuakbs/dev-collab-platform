@@ -7,7 +7,6 @@ import { useCollaboration } from "../hooks/useCollaboration";
 import { useFilesystem }    from "../hooks/useFilesystem";
 import CodeEditor           from "../components/CodeEditor";
 import ChatBox              from "../components/ChatBox";
-import AIAssistant          from "../components/AIAssistant";
 import KanbanBoard          from "../components/KanbanBoard";
 import FileExplorer         from "../components/ide/FileExplorer";
 import RealTerminal         from "../components/ide/RealTerminal";
@@ -745,9 +744,15 @@ export default function Workspace() {
           )}
 
           {activeTab === "chat" && (
-            <div className="p-6 h-full max-w-3xl mx-auto flex flex-col">
+            <div className="p-4 h-full flex flex-col">
               <div className="flex-1 border border-gray-800 rounded-2xl bg-gray-900 overflow-hidden h-full">
-                <ChatBox messages={messages} onSend={sendChat} currentUser={user} />
+                <ChatBox 
+                  messages={messages} 
+                  onSend={sendChat} 
+                  currentUser={user} 
+                  activeMembers={members} 
+                  projectMembers={project?.members || []} 
+                />
               </div>
             </div>
           )}
@@ -756,22 +761,23 @@ export default function Workspace() {
             <div className="flex-1 flex overflow-hidden h-full" style={{ fontFamily: "Consolas, 'JetBrains Mono', monospace" }}>
               {sidebarOpen && (
                 <>
-                  <div style={{ width: sidebarW, minWidth: 150, maxWidth: 400, flexShrink: 0, borderRight: "1px solid #252526", display: "flex", flexDirection: "column" }}>
-                    <div className="flex-1 overflow-hidden flex flex-col bg-[#252526]">
+                  <div style={{ width: sidebarW, minWidth: 150, maxWidth: 400, flexShrink: 0, borderRight: "1px solid #1f1f23", display: "flex", flexDirection: "column" }}>
+                    <div className="flex-1 overflow-hidden flex flex-col bg-[#141418]">
                       <FileExplorer workspaceId={workspaceId} fs={fs} onOpenFile={openFile} />
                     </div>
-                    <div className="flex-shrink-0 border-t p-2" style={{ borderColor: "#252526", background: "#252526" }}>
-                      <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: "#858585" }}>
-                        Online — {members.length}
+                    <div className="flex-shrink-0 border-t p-3 bg-[#18181c] border-[#222228] shadow-inner">
+                      <p className="text-[9px] uppercase tracking-widest mb-2 font-bold text-gray-500 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Online Members ({members.length})
                       </p>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-1.5">
                         {members.map((m, i) => (
-                          <div key={i} className="flex items-center gap-1.5">
+                          <div key={i} className="flex items-center gap-2 p-1 rounded-lg hover:bg-white/[0.02] transition-colors">
                             <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                              style={{ background: m.color, color: "#1e1e1e" }}>
+                              style={{ background: m.color, color: "#111" }}>
                               {m.name?.[0]?.toUpperCase()}
                             </div>
-                            <span className="text-[10px] flex-1 truncate" style={{ color: "#cccccc" }}>{m.name}</span>
+                            <span className="text-[10px] flex-1 truncate text-gray-400 font-medium">{m.name}</span>
                           </div>
                         ))}
                       </div>
@@ -779,30 +785,37 @@ export default function Workspace() {
                   </div>
 
                   <div onMouseDown={handleSidebarResizeDrag}
-                    className="w-1 flex-shrink-0 cursor-col-resize transition-colors"
-                    style={{ background: "#2d2d2d" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#007acc")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "#2d2d2d")} />
+                    className="w-0.5 flex-shrink-0 cursor-col-resize transition-colors"
+                    style={{ background: "#222228" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#10b981")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#222228")} />
                 </>
               )}
 
-              <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+              <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-[#18181c]">
                 <button onClick={() => setSidebarOpen((v) => !v)}
-                  className="absolute left-0 top-1/2 z-10 w-4 h-12 flex items-center justify-center rounded-r transition-colors"
-                  style={{ background: "#3c3c3c", color: "#858585", transform: "translateY(-50%)", marginLeft: sidebarOpen ? sidebarW : 0 }}
+                  className="absolute left-0 top-1/2 z-10 w-4 h-12 flex items-center justify-center rounded-r border border-l-0 border-gray-800 transition-colors"
+                  style={{ background: "#222228", color: "#858585", transform: "translateY(-50%)", marginLeft: sidebarOpen ? sidebarW : 0 }}
                   title={sidebarOpen ? "Close sidebar" : "Open sidebar"}>
                   {sidebarOpen ? "‹" : "›"}
                 </button>
 
                 {openFiles.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-4"
-                    style={{ background: "#1e1e1e" }}>
-                    <div className="text-5xl mb-2">💻</div>
-                    <p className="text-sm" style={{ color: "#858585" }}>No file is open</p>
-                    <p className="text-xs" style={{ color: "#555" }}>Select a file from the Explorer or create a new one</p>
+                  <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-gradient-to-br from-gray-900 to-gray-950 text-center p-8 select-none">
+                    <div className="w-20 h-20 rounded-3xl bg-emerald-950/20 border border-emerald-900/40 flex items-center justify-center shadow-lg shadow-emerald-950/30">
+                      <svg className="w-10 h-10 text-emerald-400/90" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                      </svg>
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-bold text-white tracking-wide">Developer Workspace</h3>
+                      <p className="text-xs text-gray-500 max-w-[260px] mx-auto leading-relaxed">
+                        Select a file from the explorer sidebar, or initialize a clean script template to get started.
+                      </p>
+                    </div>
                     <button onClick={() => fs.createFile("main.py", '# Hello World\nprint("Hello, DevCollab!")\n')}
-                      className="text-xs px-4 py-2 rounded" style={{ background: "#0e639c", color: "#fff" }}>
-                      + New Python File
+                      className="text-xs px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 font-bold text-white transition-all shadow-md shadow-emerald-950/40 border border-emerald-500/20 hover:scale-105 active:scale-95">
+                      + Create main.py
                     </button>
                   </div>
                 ) : (
@@ -935,8 +948,6 @@ export default function Workspace() {
           </div>
         </div>
       )}
-
-      <AIAssistant currentCode={activeFile?.content || ""} currentLanguage={activeFile?.language || "javascript"} />
     </div>
   );
 }

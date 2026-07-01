@@ -50,7 +50,10 @@ app.get("/", (req, res) => res.json({ message: "Dev Collab API running ✅" }));
 
 // ── Socket.io ────────────────────────────────────────────────────────
 const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: "*" } });
+const io     = new Server(server, { 
+  cors: { origin: "*" },
+  maxHttpBufferSize: 1e8 // 100 MB
+});
 socketHandler(io);
 
 // ── Graceful shutdown (port release on Ctrl+C) ───────────────────────

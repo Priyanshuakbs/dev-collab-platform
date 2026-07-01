@@ -318,7 +318,7 @@ export function Toast({ message, type = "success", onClose }) {
 
 export function ToastContainer({ toasts, removeToast }) {
   return (
-    <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2">
+    <div className="fixed top-16 right-6 z-[200] flex flex-col gap-2">
       <AnimatePresence>{toasts.map(t => <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />)}</AnimatePresence>
     </div>
   );

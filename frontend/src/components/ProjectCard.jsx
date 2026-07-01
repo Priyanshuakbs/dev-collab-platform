@@ -26,6 +26,15 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
   const deadlinePassed = project.deadline && new Date(project.deadline) < new Date();
   const memberCount    = project.collaborators?.length || 1;
 
+  const getInitials = (name) => {
+    if (!name) return "?";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
   const handleOpenWorkspace = async (e) => {
     e.stopPropagation();
     try {
@@ -35,9 +44,8 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
         navigate(`/workspace/${wsId}`);
         return;
       }
-      const wsRes = await api.post("/workspaces", { name: project.title });
-      const wsId  = wsRes.data._id;
-      await api.put(`/projects/${project._id}`, { workspace: wsId });
+      const wsRes = await api.post(`/projects/${project._id}/workspace`);
+      const wsId  = wsRes.data.workspaceId;
       navigate(`/workspace/${wsId}`);
     } catch (err) {
       console.error("Workspace error:", err);
@@ -142,12 +150,21 @@ export default function ProjectCard({ project, currentUser, onOpen, compact = fa
 
       {/* Footer */}
       <div className="flex items-center gap-2 pt-1 border-t border-gray-800">
+        {project.workspace?.createdBy?.name && (
+          <span 
+            className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border"
+            style={{ borderColor: "rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.1)", color: "#34d399" }}
+            title={`Workspace created by ${project.workspace.createdBy.name}`}
+          >
+            {getInitials(project.workspace.createdBy.name)}
+          </span>
+        )}
         <button
           onClick={handleOpenWorkspace}
           disabled={loading}
           className="flex-1 text-xs py-1.5 bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-emerald-100 rounded-lg transition-colors"
         >
-          {loading ? "Opening..." : "Open Workspace"}
+          {loading ? "Opening..." : project.workspace ? "Open Workspace" : "Create Workspace"}
         </button>
 
         {project.githubRepo && (

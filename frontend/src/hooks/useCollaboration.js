@@ -13,9 +13,9 @@ const joinWorkspace = (workspaceId, userId, name) => {
   socket.emit("joinWorkspace", { workspaceId, userId, name });
 };
 
-const sendMessage = (workspace, userId, name, text) => {
+const sendMessage = (workspace, userId, name, text, fileUrl = "", fileType = "", fileName = "") => {
   socket.emit("sendMessage", {
-    workspace, userId, name, text,
+    workspace, userId, name, text, fileUrl, fileType, fileName,
     timestamp: new Date().toISOString(),
   });
 };
@@ -58,6 +58,9 @@ export const useCollaboration = (workspaceId, currentUser) => {
           userId:    msg.sender?._id || msg.sender,
           name:      msg.sender?.name || "Unknown",
           text:      msg.message,
+          fileUrl:   msg.fileUrl || "",
+          fileType:  msg.fileType || "",
+          fileName:  msg.fileName || "",
           timestamp: msg.createdAt,
         }));
         setMessages(normalized);
@@ -122,9 +125,8 @@ export const useCollaboration = (workspaceId, currentUser) => {
 
   // ── Actions ──────────────────────────────────────────────────────────
 
-  const sendChat = useCallback((text) => {
-    if (!text.trim()) return;
-    sendMessage(workspaceId, currentUser._id, currentUser.name, text);
+  const sendChat = useCallback((text, fileUrl = "", fileType = "", fileName = "") => {
+    sendMessage(workspaceId, currentUser._id, currentUser.name, text, fileUrl, fileType, fileName);
   }, [workspaceId, currentUser]);
 
   const updateCode = useCallback((newCode, fileName = "main.js") => {

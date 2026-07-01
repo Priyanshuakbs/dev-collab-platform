@@ -13,8 +13,11 @@ const ACTIONS = [
   { id: "convert",  label: "Convert Language",  icon: "🔄", prompt: (code, lang) => `Convert this ${lang} code to the target language I specify:\n\`\`\`${lang}\n${code}\n\`\`\`` },
 ];
 
-export default function AIAssistant({ currentCode = "", currentLanguage = "javascript" }) {
-  const [isOpen,       setIsOpen]       = useState(false);
+export default function AIAssistant({ currentCode = "", currentLanguage = "javascript", isOpen, setIsOpen, hideFloatingButton = false }) {
+  const [localIsOpen, setLocalIsOpen] = useState(false);
+  const activeOpen = isOpen !== undefined ? isOpen : localIsOpen;
+  const activeSetOpen = setIsOpen !== undefined ? setIsOpen : setLocalIsOpen;
+
   const [messages,     setMessages]     = useState([]);
   const [input,        setInput]        = useState("");
   const [loading,      setLoading]      = useState(false);
@@ -159,19 +162,21 @@ Be concise and practical. Always format code with markdown code blocks.`;
   return (
     <>
       {/* ── Floating Button ── */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
-          isOpen ? "bg-gray-700" : "bg-emerald-600 hover:bg-emerald-500"
-        }`}
-        title="AI Code Assistant"
-      >
-        <span className="text-xl">{isOpen ? "✕" : "🤖"}</span>
-      </button>
+      {!hideFloatingButton && (
+        <button
+          onClick={() => activeSetOpen(!activeOpen)}
+          className={`fixed bottom-20 right-6 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
+            activeOpen ? "bg-gray-700" : "bg-emerald-600 hover:bg-emerald-500"
+          }`}
+          title="AI Code Assistant"
+        >
+          <span className="text-xl">{activeOpen ? "✕" : "🤖"}</span>
+        </button>
+      )}
 
       {/* ── Chat Panel ── */}
-      {isOpen && (
-        <div className="fixed bottom-20 right-6 z-50 w-96 h-[520px] bg-gray-900 border border-gray-700 rounded-2xl flex flex-col shadow-2xl font-mono overflow-hidden">
+      {activeOpen && (
+        <div className="fixed z-[999] w-96 h-[540px] bg-gray-900 border border-gray-700 rounded-2xl flex flex-col shadow-2xl font-mono overflow-hidden bottom-20 right-6 md:bottom-6 md:left-64 md:right-auto">
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">

@@ -53,8 +53,17 @@ function AvatarStack({ members = [], max = 4 }) {
   );
 }
 
+const getInitials = (name) => {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
 // ── Project Card ───────────────────────────────────────────────────────
-function ProjectCard({ project, currentUser, onDelete, onEdit, onOpen }) {
+function ProjectCard({ project, currentUser, onDelete, onEdit, onOpen, onCreateWorkspace }) {
   const isOwner  = project.owner?._id === currentUser?._id;
   const overdue  = project.deadline && new Date(project.deadline) < new Date();
   const members  = project.members || [];
@@ -66,7 +75,7 @@ function ProjectCard({ project, currentUser, onDelete, onEdit, onOpen }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       className="card card-interactive p-5 flex flex-col gap-4 relative group"
-      onClick={() => onOpen?.(project.workspace?._id || project._id)}
+      onClick={() => { if (project.workspace?._id) onOpen?.(project.workspace._id); }}
     >
       {isOwner && (
         <div className="absolute top-3 right-3 text-sm" title="You own this project">👑</div>
@@ -117,13 +126,32 @@ function ProjectCard({ project, currentUser, onDelete, onEdit, onOpen }) {
               </button>
             </>
           )}
-          {project.workspace?._id && (
+          {project.workspace?._id ? (
+            <div className="flex items-center gap-1.5">
+              {project.workspace?.createdBy?.name && (
+                <span 
+                  className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border"
+                  style={{ borderColor: "rgba(124,58,237,0.3)", background: "rgba(124,58,237,0.1)", color: "#c4b5fd" }}
+                  title={`Workspace created by ${project.workspace.createdBy.name}`}
+                >
+                  {getInitials(project.workspace.createdBy.name)}
+                </span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpen?.(project.workspace._id); }}
+                className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
+                style={{ background: "rgba(124,58,237,0.15)", color: "#c4b5fd" }}
+              >
+                Open →
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={(e) => { e.stopPropagation(); onOpen?.(project.workspace._id); }}
+              onClick={(e) => { e.stopPropagation(); onCreateWorkspace?.(project._id); }}
               className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
-              style={{ background: "rgba(124,58,237,0.15)", color: "#c4b5fd" }}
+              style={{ background: "rgba(16,185,129,0.15)", color: "#10b981" }}
             >
-              Open →
+              Create Workshop
             </button>
           )}
         </div>
@@ -474,6 +502,19 @@ export default function ProjectPage() {
     if (workspaceId) navigate(`/workspace/${workspaceId}`);
   };
 
+  const handleCreateWorkspace = async (projectId) => {
+    try {
+      const res = await api.post(`/projects/${projectId}/workspace`);
+      fetchProjects();
+      if (res.data.workspaceId) {
+        navigate(`/workspace/${res.data.workspaceId}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to create workspace");
+    }
+  };
+
   const currentList = (tab === "mine" ? owned : shared).filter(
     p => filterStatus === "all" || p.status === filterStatus
   );
@@ -575,6 +616,7 @@ export default function ProjectPage() {
                   onEdit={p => { setEditTarget(p); setShowModal(true); }}
                   onDelete={handleDelete}
                   onOpen={handleOpen}
+                  onCreateWorkspace={handleCreateWorkspace}
                 />
               ))}
             </AnimatePresence>

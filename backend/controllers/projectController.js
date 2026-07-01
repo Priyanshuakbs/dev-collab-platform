@@ -27,13 +27,6 @@ exports.createProject = async (req, res) => {
       return res.status(400).json({ message: "Team Name is required" });
     }
 
-    // Auto-create Workspace
-    const workspace = await Workspace.create({
-      name:    projectName.trim(),
-      owner:   req.user._id,
-      members: [req.user._id],
-    });
-
     const project = await Project.create({
       projectName:   projectName.trim(),
       description:   description || "",
@@ -49,7 +42,7 @@ exports.createProject = async (req, res) => {
           workRole: "Project Manager",
         },
       ],
-      workspace:     workspace._id,
+      workspace:     null,
     });
 
     const populated = await project.populate("owner", "name email avatar");
@@ -76,7 +69,7 @@ exports.getMyProjects = async (req, res) => {
     const projects = await Project.find(filter)
       .populate("owner",         "name email avatar")
       .populate("members.user",  "name email avatar")
-      .populate("workspace",     "name")
+      .populate({ path: "workspace", populate: { path: "createdBy", select: "name email avatar" } })
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -91,7 +84,7 @@ exports.getOwnedProjects = async (req, res) => {
     const projects = await Project.find({ owner: req.user._id })
       .populate("owner",         "name email avatar")
       .populate("members.user",  "name email avatar")
-      .populate("workspace",     "name")
+      .populate({ path: "workspace", populate: { path: "createdBy", select: "name email avatar" } })
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -109,7 +102,7 @@ exports.getSharedProjects = async (req, res) => {
     })
       .populate("owner",         "name email avatar")
       .populate("members.user",  "name email avatar")
-      .populate("workspace",     "name")
+      .populate({ path: "workspace", populate: { path: "createdBy", select: "name email avatar" } })
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -124,7 +117,7 @@ exports.getProjectById = async (req, res) => {
     const project = await Project.findById(req.params.id)
       .populate("owner",         "name email avatar")
       .populate("members.user",  "name email avatar")
-      .populate("workspace",     "name");
+      .populate({ path: "workspace", populate: { path: "createdBy", select: "name email avatar" } });
 
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -642,6 +635,51 @@ exports.acceptInviteToken = async (req, res) => {
     res.json({ message: "Successfully joined the project workspace!", workspaceId: project.workspace });
   } catch (error) {
     console.error("acceptInviteToken error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Create Project Workspace ──────────────────────────────────────────
+exports.createProjectWorkspace = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Check if user is a member of the project
+    if (!isMember(project, req.user._id)) {
+      return res.status(403).json({ message: "Access denied. You must be a project member to create its workspace." });
+    }
+
+    if (project.workspace) {
+      return res.status(400).json({ message: "Workspace already exists for this project" });
+    }
+
+    // Get all user IDs from project members
+    const memberIds = project.members.map(m => m.user._id || m.user);
+
+    // Create Workspace
+    const workspace = await Workspace.create({
+      name:      project.projectName,
+      owner:     project.owner,
+      createdBy: req.user._id, // Whoever triggers creation is the creator
+      members:   memberIds,
+    });
+
+    // Link workspace to project
+    project.workspace = workspace._id;
+    await project.save();
+
+    console.log(`✅ Workspace ${workspace._id} created for Project ${project._id} by user ${req.user._id}`);
+
+    const populatedWorkspace = await Workspace.findById(workspace._id).populate("createdBy", "name email avatar");
+
+    res.status(201).json({
+      message: "Workspace created successfully",
+      workspace: populatedWorkspace,
+      project,
+    });
+  } catch (error) {
+    console.error("createProjectWorkspace error:", error);
     res.status(500).json({ message: error.message });
   }
 };
